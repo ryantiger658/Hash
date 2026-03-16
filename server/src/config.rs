@@ -81,6 +81,15 @@ impl Config {
                 editor_labels: std::env::var("HASH_EDITOR_LABELS")
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false),
+                show_hidden_files: std::env::var("HASH_SHOW_HIDDEN_FILES")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
+                line_numbers: std::env::var("HASH_LINE_NUMBERS")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
+                spell_check: std::env::var("HASH_SPELL_CHECK")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
             },
         })
     }
@@ -98,6 +107,18 @@ pub struct UiConfig {
     /// Defaults to false (icon-only). Set to true to restore text labels.
     #[serde(default)]
     pub editor_labels: bool,
+    /// Show hidden files (names starting with '.') in the file tree.
+    /// Defaults to false. Set to true to reveal dotfiles.
+    #[serde(default)]
+    pub show_hidden_files: bool,
+    /// Show line numbers in the markdown editor pane.
+    /// Defaults to false.
+    #[serde(default)]
+    pub line_numbers: bool,
+    /// Enable browser spell-check in the editor pane.
+    /// Defaults to false (markdown syntax causes many false positives).
+    #[serde(default)]
+    pub spell_check: bool,
 }
 
 impl Default for UiConfig {
@@ -106,6 +127,9 @@ impl Default for UiConfig {
             secondary_color: default_secondary_color(),
             default_theme: default_theme(),
             editor_labels: false,
+            show_hidden_files: false,
+            line_numbers: false,
+            spell_check: false,
         }
     }
 }

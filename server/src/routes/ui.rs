@@ -15,6 +15,9 @@ pub async fn get_ui_config(State(state): State<Arc<AppState>>) -> impl IntoRespo
         secondary_color: state.config.ui.secondary_color.clone(),
         default_theme: state.config.ui.default_theme.clone(),
         editor_labels: state.config.ui.editor_labels,
+        show_hidden_files: state.config.ui.show_hidden_files,
+        line_numbers: state.config.ui.line_numbers,
+        spell_check: state.config.ui.spell_check,
     })
 }
 
@@ -23,4 +26,7 @@ pub struct UiConfigResponse {
     pub secondary_color: String,
     pub default_theme: String,
     pub editor_labels: bool,
+    pub show_hidden_files: bool,
+    pub line_numbers: bool,
+    pub spell_check: bool,
 }

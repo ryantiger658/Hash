@@ -4,6 +4,7 @@
  */
 import { writable, derived, get } from 'svelte/store'
 import { api, AuthError } from '../lib/api.js'
+import { parseFrontmatter, normalizeTags, normalizeArray } from '../lib/frontmatter.js'
 
 // ── Raw stores ────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,12 @@ export const fileContent = writable('')     // current editor content
 export const savedContent = writable('')    // content as last saved to server
 export const isLoading = writable(false)
 export const saveStatus = writable('idle')  // 'idle' | 'saving' | 'saved' | 'error'
+
+/**
+ * Maps alias (lowercase) → vault path.
+ * Built up as files are opened — not complete until each file is visited at least once.
+ */
+export const aliasMap = writable(new Map())
 
 // ── Derived ───────────────────────────────────────────────────────────────────
 
@@ -41,7 +48,7 @@ export async function loadVault() {
   isLoading.set(true)
   try {
     const result = await api.listFiles()
-    files.set(result)
+    files.set(Array.isArray(result) ? result : [])
   } finally {
     isLoading.set(false)
   }
@@ -82,6 +89,17 @@ export async function selectFile(path) {
   const text = await api.getFile(path)
   fileContent.set(text)
   savedContent.set(text)
+
+  // Cache any aliases declared in frontmatter for wiki-link resolution
+  const { meta } = parseFrontmatter(text)
+  const aliases = normalizeArray(meta.aliases ?? meta.alias)
+  if (aliases.length) {
+    aliasMap.update(m => {
+      const next = new Map(m)
+      for (const a of aliases) next.set(a.toLowerCase(), path)
+      return next
+    })
+  }
 }
 
 /** True if `path` is a journal file whose content is only the auto-generated heading. */
@@ -185,11 +203,14 @@ function buildTree(files) {
 
       let node = siblings.find(n => n.name === name)
       if (!node) {
-        node = { name, path, isDir: !isLast, children: isLast ? undefined : [] }
+        const isDir = !isLast || !!file.isDir
+        node = { name, path, isDir, children: isDir ? [] : undefined }
         siblings.push(node)
-        // Directories first, then files, both alphabetical
+        // journal dir pinned first, then other dirs, then files — all alphabetical within group
         siblings.sort((a, b) => {
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+          if (a.name === 'journal' && a.isDir) return -1
+          if (b.name === 'journal' && b.isDir) return 1
           return a.name.localeCompare(b.name)
         })
       }

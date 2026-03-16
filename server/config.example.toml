@@ -10,8 +10,10 @@
 #   HASH_HOST             (default: 0.0.0.0)
 #   HASH_PORT             (default: 3535)
 #   HASH_POLL_INTERVAL    (default: 30)
-#   HASH_SECONDARY_COLOR  (default: #6366f1)
-#   HASH_DEFAULT_THEME    (default: system)
+#   HASH_SECONDARY_COLOR      (default: #aaff00)
+#   HASH_DEFAULT_THEME        (default: system)
+#   HASH_SHOW_HIDDEN_FILES    (default: false)
+#   HASH_LINE_NUMBERS         (default: false)
 
 [server]
 # Address to bind the HTTP server to.
@@ -43,6 +45,20 @@ default_theme = "system"
 # Defaults to false (icon-only). Set to true to restore text labels.
 # Can also be set via HASH_EDITOR_LABELS=true environment variable.
 editor_labels = false
+
+# Show files and directories whose names begin with '.' in the file tree.
+# Useful for revealing hidden attachment folders in the future.
+# Can also be set via HASH_SHOW_HIDDEN_FILES=true.
+show_hidden_files = false
+
+# Display line numbers in the editor pane.
+# Can also be set via HASH_LINE_NUMBERS=true.
+line_numbers = false
+
+# Enable browser spell-check in the editor pane.
+# Disabled by default — markdown syntax causes many false positives.
+# Can also be set via HASH_SPELL_CHECK=true.
+spell_check = false
 
 [auth]
 # API key for authenticating desktop clients and web UI requests.

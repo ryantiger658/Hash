@@ -7,27 +7,34 @@ use walkdir::WalkDir;
 /// Represents the vault — the root directory of markdown files.
 pub struct Vault {
     pub root: PathBuf,
+    /// When false (default), entries whose name starts with '.' are hidden.
+    /// The `.mdkb` metadata directory is always hidden regardless of this flag.
+    pub show_hidden: bool,
 }
 
-/// Metadata about a single file in the vault.
+/// Metadata about a single file (or directory) in the vault.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileEntry {
     /// Path relative to vault root, using forward slashes.
     pub path: String,
-    /// SHA-256 checksum of the file contents.
+    /// SHA-256 checksum of the file contents. Empty string for directories.
     pub checksum: String,
-    /// Last modified timestamp (Unix seconds).
+    /// Last modified timestamp (Unix seconds). 0 for directories.
     pub modified: i64,
     /// Creation timestamp (Unix seconds). None on platforms that don't expose it.
     pub created: Option<i64>,
-    /// File size in bytes.
+    /// File size in bytes. 0 for directories.
     pub size: u64,
+    /// True when this entry represents a directory rather than a file.
+    #[serde(rename = "isDir", default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_dir: bool,
 }
 
 impl Vault {
-    pub fn new(root: &str) -> Self {
+    pub fn new(root: &str, show_hidden: bool) -> Self {
         Self {
             root: PathBuf::from(root),
+            show_hidden,
         }
     }
 
@@ -35,35 +42,76 @@ impl Vault {
     pub fn list_files(&self) -> Result<Vec<FileEntry>> {
         let mut entries = Vec::new();
 
+        // Capture flag so the closure doesn't borrow `self`.
+        let show_hidden = self.show_hidden;
+
         for entry in WalkDir::new(&self.root)
+            // Keep follow_links(false) so entry.path() is always the path of the
+            // entry within the vault tree (symlink path, not target path).
+            // Symlinks are handled explicitly below via std::fs::metadata, which
+            // follows symlinks for metadata and content.
             .follow_links(false)
             .into_iter()
+            // filter_entry prunes entire subtrees so hidden dirs aren't descended into.
+            .filter_entry(|e| {
+                if e.depth() == 0 { return true } // always allow vault root
+                let name = e.file_name().to_str().unwrap_or("");
+                // Always prune .mdkb; prune other dotfiles when show_hidden is false.
+                name != ".mdkb" && (show_hidden || !name.starts_with('.'))
+            })
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            // Skip the .mdkb metadata directory
-            .filter(|e| !e.path().components().any(|c| c.as_os_str() == ".mdkb"))
+            // Skip vault root itself (depth 0)
+            .filter(|e| e.depth() > 0)
         {
             let path = entry.path();
-            let rel = self.relative_path(path)?;
-            let meta = std::fs::metadata(path)?;
-            let modified = meta
-                .modified()?
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_secs() as i64;
-            let created = meta
-                .created()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64);
-            let checksum = checksum_file(path)?;
+            let rel = match self.relative_path(path) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
 
-            entries.push(FileEntry {
-                path: rel,
-                checksum,
-                modified,
-                created,
-                size: meta.len(),
-            });
+            if entry.file_type().is_dir() {
+                entries.push(FileEntry {
+                    path: rel,
+                    checksum: String::new(),
+                    modified: 0,
+                    created: None,
+                    size: 0,
+                    is_dir: true,
+                });
+            } else {
+                // Handles both regular files (is_file) and symlinks to files (is_symlink).
+                // std::fs::metadata follows symlinks, so we get the target's metadata.
+                // For symlinks to directories or broken symlinks, metadata.is_file()
+                // will be false and we skip them.
+                let meta = match std::fs::metadata(path) {
+                    Ok(m) if m.is_file() => m,
+                    _ => continue,
+                };
+                let modified = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let created = meta
+                    .created()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64);
+                let checksum = match checksum_file(path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                entries.push(FileEntry {
+                    path: rel,
+                    checksum,
+                    modified,
+                    created,
+                    size: meta.len(),
+                    is_dir: false,
+                });
+            }
         }
 
         Ok(entries)
@@ -82,6 +130,35 @@ impl Vault {
             std::fs::create_dir_all(parent)?;
         }
         Ok(std::fs::write(full, content)?)
+    }
+
+    /// Read the vault schema version from `.mdkb/vault.toml`.
+    /// Returns `0` if the file is absent or unparseable (pre-v0.0.3 vault).
+    pub fn read_schema_version(&self) -> Result<u32> {
+        match self.read_file(".mdkb/vault.toml") {
+            Ok(bytes) => {
+                let content = std::str::from_utf8(&bytes).unwrap_or("");
+                for line in content.lines() {
+                    if let Some(rest) = line.trim().strip_prefix("schema_version") {
+                        if let Some(val) = rest.trim().strip_prefix('=') {
+                            if let Ok(v) = val.trim().parse::<u32>() {
+                                return Ok(v);
+                            }
+                        }
+                    }
+                }
+                Ok(0)
+            }
+            Err(_) => Ok(0),
+        }
+    }
+
+    /// Write the vault schema version to `.mdkb/vault.toml`.
+    pub fn write_schema_version(&self, version: u32) -> Result<()> {
+        let content = format!(
+            "# #ash vault metadata — do not edit manually\nschema_version = {version}\n"
+        );
+        self.write_file(".mdkb/vault.toml", content.as_bytes())
     }
 
     /// Delete a file by vault-relative path.
@@ -143,7 +220,7 @@ mod tests {
 
     fn setup() -> (Vault, TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let vault = Vault::new(dir.path().to_str().unwrap());
+        let vault = Vault::new(dir.path().to_str().unwrap(), true);
         (vault, dir)
     }
 
@@ -241,6 +318,30 @@ mod tests {
         vault.write_file("change.md", b"version 2").unwrap();
         let c2 = vault.list_files().unwrap()[0].checksum.clone();
         assert_ne!(c1, c2);
+    }
+
+    #[test]
+    fn list_files_hides_dotfiles_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::new(dir.path().to_str().unwrap(), false);
+        vault.write_file("visible.md", b"hello").unwrap();
+        vault.write_file(".hidden.md", b"secret").unwrap();
+        vault.write_file(".attachments/image.png", b"img").unwrap();
+        let files = vault.list_files().unwrap();
+        assert!(files.iter().any(|f| f.path == "visible.md"));
+        assert!(files.iter().all(|f| !f.path.starts_with('.')));
+    }
+
+    #[test]
+    fn list_files_shows_dotfiles_when_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::new(dir.path().to_str().unwrap(), true);
+        vault.write_file("visible.md", b"hello").unwrap();
+        vault.write_file(".hidden.md", b"secret").unwrap();
+        let files = vault.list_files().unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"visible.md"));
+        assert!(paths.contains(&".hidden.md"));
     }
 
     #[test]

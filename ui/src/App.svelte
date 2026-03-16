@@ -4,6 +4,7 @@
   import { hasApiKey, clearApiKey } from './lib/api.js'
   import {
     fileTree, files, selectedPath, selectedFile, fileContent,
+    isDirty, saveStatus, aliasMap,
     loadVault, selectFile, createFile, deleteFile, deleteFolder,
     saveCurrentFile, openTodayJournal,
   } from './stores/vault.js'
@@ -42,15 +43,22 @@
     setTheme(next)
   }
 
+  // ── Editor mode ──────────────────────────────────────────────────────────
+  let editorMode = 'split'
+  const saveLabels = { idle: '', saving: 'Saving…', saved: '✓ Saved', error: 'Save failed' }
+
   // ── Sidebar ───────────────────────────────────────────────────────────────
   let sidebarOpen = false       // mobile: drawer open
   let sidebarCollapsed = false  // desktop: panel collapsed
 
-  // Hamburger: mobile drawer toggle + desktop expand (only appears when collapsed)
-  function toggleMenu() {
-    sidebarOpen = !sidebarOpen
-    sidebarCollapsed = false  // on desktop: always expands
-  }
+  // Compute which folder paths need to be open to reveal the selected file
+  $: openPaths = (() => {
+    if (!$selectedPath) return new Set()
+    const parts = $selectedPath.split('/')
+    const s = new Set()
+    for (let i = 1; i < parts.length; i++) s.add(parts.slice(0, i).join('/'))
+    return s
+  })()
 
   // ── New note modal ───────────────────────────────────────────────────────
   let showNewModal = false
@@ -74,9 +82,18 @@
     await deleteFolder(e.detail)
   }
 
-  // Resolve a wiki-link: find best matching file by name or path
+  // Resolve a wiki-link: check aliases first, then match by path/name
   async function handleWikiLink(e) {
     const target = e.detail.toLowerCase()
+
+    // 1. Check alias cache (built up as files are opened)
+    const aMap = get(aliasMap)
+    if (aMap.has(target)) {
+      await selectFile(aMap.get(target))
+      return
+    }
+
+    // 2. Match by path or filename
     const list = get(files)
     const found = list.find(f =>
       f.path.toLowerCase() === target + '.md' ||
@@ -97,6 +114,14 @@
       e.preventDefault()
       showNewModal = true
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      e.preventDefault()
+      if (window.innerWidth <= 640) {
+        sidebarOpen = !sidebarOpen
+      } else {
+        sidebarCollapsed = !sidebarCollapsed
+      }
+    }
   }
 
   onMount(async () => {
@@ -116,15 +141,6 @@
   <div class="app">
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <header>
-      <!-- Hamburger: mobile only -->
-      <button class="icon-btn menu-btn" on:click={toggleMenu} title="Menu">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <line x1="2" y1="4" x2="14" y2="4"/>
-          <line x1="2" y1="8" x2="14" y2="8"/>
-          <line x1="2" y1="12" x2="14" y2="12"/>
-        </svg>
-      </button>
-
       <span class="logo">#</span>
 
       <SearchBar on:select={handleSelect} />
@@ -170,9 +186,16 @@
         <div class="sidebar-backdrop" on:click={() => (sidebarOpen = false)}></div>
       {/if}
 
-      <!-- Floating expand button: desktop only, when sidebar is collapsed -->
+      <!-- Floating expand button: desktop when collapsed, mobile when drawer closed -->
       {#if sidebarCollapsed}
-        <button class="sidebar-expand-float" on:click={() => (sidebarCollapsed = false)} title="Expand sidebar">
+        <button class="sidebar-expand-float desktop-float" on:click={() => (sidebarCollapsed = false)} title="Expand sidebar">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6,3 11,8 6,13"/>
+          </svg>
+        </button>
+      {/if}
+      {#if !sidebarOpen}
+        <button class="sidebar-expand-float mobile-float" on:click={() => (sidebarOpen = true)} title="Open sidebar">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6,3 11,8 6,13"/>
           </svg>
@@ -194,17 +217,27 @@
             {/if}
           </button>
           {#if !sidebarCollapsed}
-            <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <line x1="8" y1="2" x2="8" y2="14"/>
-                <line x1="2" y1="8" x2="14" y2="8"/>
-              </svg>
-            </button>
+            <div class="sidebar-toolbar-actions">
+              <button class="icon-btn muted" on:click={openTodayJournal} title="Today's journal">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="1" y="2" width="14" height="13" rx="2"/>
+                  <line x1="5" y1="1" x2="5" y2="4"/>
+                  <line x1="11" y1="1" x2="11" y2="4"/>
+                  <line x1="1" y1="7" x2="15" y2="7"/>
+                </svg>
+              </button>
+              <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="8" y1="2" x2="8" y2="14"/>
+                  <line x1="2" y1="8" x2="14" y2="8"/>
+                </svg>
+              </button>
+            </div>
           {/if}
         </div>
 
         <div class="tree-scroll">
-          <FileTree nodes={$fileTree} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} />
+          <FileTree nodes={$fileTree} {openPaths} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} />
         </div>
 
         <div class="sidebar-footer">
@@ -214,7 +247,7 @@
               <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
             </svg>
           </a>
-          <a href="https://buymeacoffee.com/noyuguti" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link" title="Buy me a coffee">
+          <a href="https://buymeacoffee.com/ryantiger658" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link" title="Buy me a coffee">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 3h8l-1 7H4L3 3z"/>
               <path d="M11 5h1.5a1.5 1.5 0 0 1 0 3H11"/>
@@ -224,10 +257,39 @@
         </div>
       </aside>
 
+      <!-- Floating editor mode panel (right side) -->
+      {#if $selectedPath}
+        <div class="editor-mode-float">
+          <button class:active={editorMode === 'edit'} on:click={() => (editorMode = 'edit')} title="Edit">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/>
+            </svg>
+          </button>
+          <button class:active={editorMode === 'split'} on:click={() => (editorMode = 'split')} title="Split">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="2" width="6" height="12" rx="1.5"/>
+              <rect x="9" y="2" width="6" height="12" rx="1.5"/>
+            </svg>
+          </button>
+          <button class:active={editorMode === 'preview'} on:click={() => (editorMode = 'preview')} title="Preview">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 8s3-4.5 7-4.5S15 8 15 8s-3 4.5-7 4.5S1 8 1 8z"/>
+              <circle cx="8" cy="8" r="2"/>
+            </svg>
+          </button>
+          <div class="float-divider"></div>
+          <div class="float-save-dot"
+            class:dirty={$isDirty || $saveStatus === 'saving'}
+            class:error={$saveStatus === 'error'}
+            title={$isDirty ? 'Unsaved changes' : ($saveStatus === 'idle' ? 'Saved' : saveLabels[$saveStatus])}
+          ></div>
+        </div>
+      {/if}
+
       <!-- Main content -->
       <main class="main">
         {#if $selectedPath}
-          <Editor file={$selectedFile} on:wikilink={handleWikiLink} />
+          <Editor file={$selectedFile} bind:mode={editorMode} on:wikilink={handleWikiLink} />
         {:else}
           <div class="empty-state">
             <p class="empty-title">#ash</p>
@@ -250,17 +312,22 @@
     --color-border:     #1f1f1f;
     --color-text:       #e2e4ed;
     --color-text-muted: #6b6e85;
-    --color-accent:     #aaff00;
-    --color-accent-dim: #aaff0044;
+    /* --color-accent-raw is set by JS (applyAccentColor); CSS derives --color-accent from it.
+       Fallback values here cover the first paint before JS runs. */
+    --color-accent-raw: #aaff00;
+    --color-accent:     var(--color-accent-raw);
+    --color-accent-dim: #aaff0026;
   }
 
+  /* Light mode: darken the accent ~50% so it reads on white/light backgrounds. */
   :global([data-theme="light"]) {
     --color-bg:         #f5f6fa;
     --color-surface:    #ffffff;
     --color-border:     #dde0f0;
     --color-text:       #1a1d2e;
     --color-text-muted: #6b6e85;
-    --color-accent-dim: #aaff0033;
+    --color-accent:     color-mix(in srgb, var(--color-accent-raw) 50%, #000000);
+    --color-accent-dim: color-mix(in srgb, var(--color-accent-raw) 18%, transparent);
   }
 
   @media (prefers-color-scheme: light) {
@@ -270,7 +337,8 @@
       --color-border:     #dde0f0;
       --color-text:       #1a1d2e;
       --color-text-muted: #6b6e85;
-      --color-accent-dim: #aaff0033;
+      --color-accent:     color-mix(in srgb, var(--color-accent-raw) 50%, #000000);
+      --color-accent-dim: color-mix(in srgb, var(--color-accent-raw) 18%, transparent);
     }
   }
 
@@ -295,7 +363,8 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0 1rem;
-    height: 48px;
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(48px + env(safe-area-inset-top, 0px));
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
@@ -324,11 +393,11 @@
   }
 
   .sidebar-expand-float {
-    display: none; /* mobile: hidden */
     position: absolute;
     top: 8px;
     left: 8px;
     z-index: 5;
+    display: none;
     align-items: center;
     justify-content: center;
     width: 24px;
@@ -345,6 +414,72 @@
     background: var(--color-border);
     color: var(--color-text);
   }
+
+  /* ── Floating editor mode panel (right side) ────────────────────────── */
+  .editor-mode-float {
+    position: fixed;
+    right: 8px;
+    top: 56px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+
+  .editor-mode-float button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .editor-mode-float button:hover {
+    background: var(--color-border);
+    color: var(--color-text);
+  }
+
+  .editor-mode-float button.active {
+    background: var(--color-border);
+    color: var(--color-accent);
+  }
+
+  .float-divider {
+    width: 14px;
+    height: 1px;
+    background: var(--color-border);
+    margin: 2px 0;
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1;    transform: scale(1); }
+    50%       { opacity: 0.35; transform: scale(0.7); }
+  }
+
+  .float-save-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-accent); /* default: saved/synced */
+    transition: background 0.2s;
+    margin: 2px 0;
+    flex-shrink: 0;
+  }
+
+  .float-save-dot.dirty { background: #f59e0b; animation: dot-pulse 1.4s ease-in-out infinite; }
+  .float-save-dot.error { background: #f87171; animation: dot-pulse 1.0s ease-in-out infinite; }
 
   /* ── Sidebar ─────────────────────────────────────────────────────────── */
   .sidebar {
@@ -484,6 +619,12 @@
     font-size: 0.9rem;
   }
 
+  .sidebar-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+  }
+
   .new-btn {
     border: none;
     background: transparent;
@@ -511,9 +652,6 @@
     text-decoration: underline;
   }
 
-  /* ── Hamburger: mobile only ──────────────────────────────────────────── */
-  .menu-btn { display: none; }
-
   /* ── Desktop only ────────────────────────────────────────────────────── */
   @media (min-width: 641px) {
     .collapse-btn { display: inline-flex; }
@@ -526,16 +664,18 @@
       border-right: none;
     }
 
-    .sidebar-expand-float { display: inline-flex; }
+    .desktop-float { display: inline-flex; }
+    .mobile-float  { display: none; }
   }
 
   /* ── Responsive ──────────────────────────────────────────────────────── */
   @media (max-width: 640px) {
-    .menu-btn { display: flex; }
+    .desktop-float { display: none; }
+    .mobile-float  { display: inline-flex; }
 
     .sidebar {
       position: fixed;
-      top: 48px;
+      top: calc(48px + env(safe-area-inset-top, 0px));
       left: 0;
       bottom: 0;
       z-index: 200;
@@ -551,7 +691,7 @@
 
     .sidebar-backdrop {
       position: fixed;
-      inset: 48px 0 0 0;
+      inset: calc(48px + env(safe-area-inset-top, 0px)) 0 0 0;
       z-index: 199;
       background: rgba(0, 0, 0, 0.55);
     }

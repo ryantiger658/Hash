@@ -2,7 +2,7 @@
  * Markdown rendering for #ash.
  * Uses marked with syntax highlighting (highlight.js) and custom extensions.
  */
-import { marked } from 'marked'
+import { Marked } from 'marked'
 import hljs from 'highlight.js/lib/core'
 
 // ── Register common languages ─────────────────────────────────────────────────
@@ -70,20 +70,23 @@ const wikiLinkExtension = {
 // ── Hex color swatch in inline code ──────────────────────────────────────────
 const HEX_RE = /^#[0-9a-fA-F]{3,8}$/
 
-marked.use({
-  extensions: [wikiLinkExtension],
+// ── Marked instance ───────────────────────────────────────────────────────────
+const parser = new Marked({
   gfm: true,
   breaks: false,
+  extensions: [wikiLinkExtension],
   renderer: {
     // Fenced code blocks: syntax highlight with hljs
-    code({ text, lang }) {
+    code(text, lang) {
       const safeText = text ?? ''
       const language = (lang ?? '').split(/\s+/)[0]
       if (language && hljs.getLanguage(language)) {
-        const highlighted = hljs.highlight(safeText, { language }).value
-        return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+        try {
+          const highlighted = hljs.highlight(safeText, { language }).value
+          return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+        } catch (_) {}
       }
-      // No language: escape HTML manually rather than risk auto-detection failures
+      // No language: escape HTML manually
       const escaped = safeText
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -91,11 +94,11 @@ marked.use({
       return `<pre><code class="hljs">${escaped}</code></pre>`
     },
     // Inline code: add color chip for hex colors
-    codespan({ text }) {
+    codespan(text) {
       if (HEX_RE.test(text)) {
         return `<code><span class="color-chip" style="background:${text}"></span>${text}</code>`
       }
-      return false // use default rendering
+      return `<code>${text}</code>`
     },
   },
 })
@@ -108,7 +111,7 @@ marked.use({
  * @returns {string}
  */
 export function renderMarkdown(md) {
-  const raw = marked.parse(md ?? '')
+  const raw = parser.parse(md ?? '')
   // Remove `disabled=""` from task-list checkboxes and stamp a data-cb index
   let cbIndex = 0
   return raw.replace(/<input\b([^>]*?)\btype="checkbox"\b([^>]*)>/g, (match, pre, post) => {

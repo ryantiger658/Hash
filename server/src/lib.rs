@@ -1,4 +1,5 @@
 pub mod config;
+pub mod migrations;
 pub mod routes;
 pub mod sync;
 pub mod vault;
@@ -25,7 +26,13 @@ pub async fn run() -> Result<()> {
     let config = config::Config::load()?;
     info!("Vault path: {}", config.vault.path);
 
-    let vault = vault::Vault::new(&config.vault.path);
+    let vault = vault::Vault::new(&config.vault.path, config.ui.show_hidden_files);
+
+    // Apply any pending vault schema migrations before accepting requests.
+    if let Err(e) = migrations::run(&vault) {
+        tracing::warn!("Vault migration did not complete cleanly: {e}");
+    }
+
     let state = Arc::new(AppState { config, vault });
     let app = routes::build_router(state.clone());
 

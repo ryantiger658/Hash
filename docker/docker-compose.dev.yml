@@ -1,0 +1,14 @@
+services:
+  hash:
+    image: ${HASH_IMAGE:-hash:latest}
+    container_name: hash
+    restart: "no"
+    ports:
+      - "3535:3535"
+    volumes:
+      - ../vault:/vault
+    environment:
+      HASH_API_KEY: "change-me-before-deploying"
+      HASH_VAULT_PATH: /vault
+      HASH_SPELL_CHECK: true
+      HASH_LINE_NUMBERS: true

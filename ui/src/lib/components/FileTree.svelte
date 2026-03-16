@@ -8,10 +8,24 @@
 
   export let nodes = []
   export let depth = 0
+  export let openPaths = new Set()
 
   const dispatch = createEventDispatcher()
 
   let open = {}
+
+  // Auto-expand any folder whose path is an ancestor of the selected file
+  $: {
+    const next = { ...open }
+    let changed = false
+    for (const node of nodes) {
+      if (node.isDir && openPaths.has(node.path) && !next[node.path]) {
+        next[node.path] = true
+        changed = true
+      }
+    }
+    if (changed) open = next
+  }
 
   function toggle(node) { open[node.path] = !open[node.path] }
   function select(node) { dispatch('select', node.path) }
@@ -64,7 +78,7 @@
           </button>
         </div>
         {#if open[node.path]}
-          <svelte:self nodes={node.children} depth={depth + 1} on:select={bubble} on:delete-folder={bubbleDelete} on:delete-file={bubbleDeleteFile} />
+          <svelte:self nodes={node.children} depth={depth + 1} {openPaths} on:select={bubble} on:delete-folder={bubbleDelete} on:delete-file={bubbleDeleteFile} />
         {/if}
       {:else}
         <div class="file-row-wrap" class:active={$selectedPath === node.path}>
@@ -193,10 +207,6 @@
   .file-row-wrap.active {
     box-shadow: inset 0 0 0 1.5px var(--color-accent);
     border-radius: 5px;
-  }
-
-  .file-row-wrap.active .file-delete {
-    display: flex;
   }
 
   .arrow {

@@ -45,7 +45,7 @@ fn make_app_with_key(api_key: &str) -> (Router, TempDir) {
         },
         ui: UiConfig::default(),
     };
-    let vault = Vault::new(&config.vault.path);
+    let vault = Vault::new(&config.vault.path, false);
     let state = Arc::new(AppState { config, vault });
     (build_router(state), dir)
 }

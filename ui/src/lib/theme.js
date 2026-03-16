@@ -12,15 +12,23 @@ export const THEMES = ['light', 'dark', 'system']
 /** Whether editor mode buttons should show text labels (server-configured). */
 export const editorLabels = writable(false)
 
+/** Whether to show line numbers in the editor (server-configured). */
+export const lineNumbers = writable(false)
+
+/** Whether to enable browser spell-check in the editor (server-configured). */
+export const spellCheck = writable(false)
+
 /** Fetch UI config from the server and apply the accent color. */
 export async function loadServerTheme() {
   try {
     const res = await fetch('/api/ui-config')
     if (!res.ok) return
-    const { secondary_color, default_theme, editor_labels } = await res.json()
+    const { secondary_color, default_theme, editor_labels, line_numbers, spell_check } = await res.json()
 
     applyAccentColor(secondary_color)
     editorLabels.set(!!editor_labels)
+    lineNumbers.set(!!line_numbers)
+    spellCheck.set(!!spell_check)
 
     // Only apply the server's default_theme if the user hasn't saved a preference.
     if (!localStorage.getItem('hash-theme')) {
@@ -31,12 +39,13 @@ export async function loadServerTheme() {
   }
 }
 
-/** Apply a CSS hex accent color as --color-accent and derived shades. */
+/** Apply a CSS hex accent color as --color-accent-raw (CSS derives contextual shades). */
 export function applyAccentColor(hex) {
   if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return
   const el = document.documentElement
-  el.style.setProperty('--color-accent', hex)
-  el.style.setProperty('--color-accent-dim', hex + 'aa') // 67% opacity variant
+  // Set the raw value — CSS computes --color-accent (darkened in light mode) from this.
+  el.style.setProperty('--color-accent-raw', hex)
+  el.style.setProperty('--color-accent-dim', hex + '26') // ~15% opacity background tint
 }
 
 /** Set the active theme: 'light', 'dark', or 'system'. Persists to localStorage. */

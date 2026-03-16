@@ -1,6 +1,6 @@
 ---
 title: Welcome to #ash
-tags: [getting-started]
+tags: [getting-started, welcome, start-here]
 created: 2026-03-15
 ---
 

@@ -40,13 +40,17 @@ pub async fn search(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let mut results: Vec<SearchResult> = Vec::new();
+    // Collect filename matches first (higher relevance), then content-only matches.
+    let mut filename_results: Vec<SearchResult> = Vec::new();
+    let mut content_results: Vec<SearchResult> = Vec::new();
 
     for file in files {
-        // Only search markdown files; skip binary attachments.
-        if !file.path.ends_with(".md") {
+        // Only search markdown files; skip directories and binary attachments.
+        if file.is_dir || !file.path.ends_with(".md") {
             continue;
         }
+
+        let filename_match = file.path.to_lowercase().contains(&query);
 
         let bytes = match state.vault.read_file(&file.path) {
             Ok(b) => b,
@@ -57,29 +61,28 @@ pub async fn search(
             Err(_) => continue,
         };
 
-        // Search file contents line by line.
-        let mut matched_content = false;
-        for (i, line) in content.lines().enumerate() {
-            if line.to_lowercase().contains(&query) {
-                results.push(SearchResult {
-                    path: file.path.clone(),
-                    snippet: line.trim().to_string(),
-                    line: i + 1,
-                });
-                matched_content = true;
-                break; // one snippet per file keeps results clean
-            }
-        }
-
-        // Also match on filename if not already matched.
-        if !matched_content && file.path.to_lowercase().contains(&query) {
-            results.push(SearchResult {
+        if filename_match {
+            // Filename match takes priority — surface it first, no snippet needed.
+            filename_results.push(SearchResult {
                 path: file.path.clone(),
                 snippet: String::new(),
                 line: 0,
             });
+        } else {
+            // Content-only match: return first matching line as snippet.
+            for (i, line) in content.lines().enumerate() {
+                if line.to_lowercase().contains(&query) {
+                    content_results.push(SearchResult {
+                        path: file.path.clone(),
+                        snippet: line.trim().to_string(),
+                        line: i + 1,
+                    });
+                    break;
+                }
+            }
         }
     }
 
-    Ok(Json(results))
+    filename_results.extend(content_results);
+    Ok(Json(filename_results))
 }

@@ -143,7 +143,7 @@
 
   button[type="submit"] {
     background: var(--color-accent);
-    color: #fff;
+    color: #000;
   }
 
   button.secondary {

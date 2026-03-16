@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v0.5** — M0 and M1 complete; M2 (Sync Protocol) is next
+> Status: **v0.6** — M0 and M1 complete; v0.0.3 release candidate; M2 (Sync Protocol) is next
 
 ---
 
@@ -69,21 +69,25 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - Docker named volume seeds welcome content on first run
 - Chainguard base images (near-zero CVE)
 
-### Web Interface ✅ M1
+### Web Interface ✅ M1 + v0.0.3
 
-- Browse the document repository (folder tree + file list)
+- Browse the document repository (folder tree + file list); empty directories visible
 - Read markdown with rendered preview
 - Edit markdown (split editor: textarea + live preview)
-- Edit / Split / Preview mode toggle (icon buttons; text labels opt-in via `editor_labels` config)
-- Create, rename, and delete files and folders
-- Full-text search across all `.md` files (case-insensitive, returns path + snippet + line number)
+- Edit / Split / Preview mode toggle — floating panel on the right edge; text labels opt-in via `editor_labels` config
+- Optional line numbers in the editor pane (`line_numbers` config)
+- Create and delete files and folders; delete button appears on hover only
+- Full-text search across all `.md` files — filename matches ranked first, then content matches (case-insensitive, returns path + snippet + line number)
 - Auto-save (1.5s debounce after last keystroke); `⌘S` manual save
+- Save status dot: always-visible indicator; pulsates amber when unsaved, chartreuse when synced, red on error
 - New note modal supporting nested paths (`folder/note.md`)
-- Light / dark / system theme; accent color configurable server-side
+- Light / dark / system theme; accent color configurable server-side; accent auto-darkened in light mode for legibility
 - Default accent color: chartreuse (`#aaff00`)
-- Wiki-links: `[[Note Name]]` and `[[Note|Label]]`
-- Daily journal: auto-opens `journal/YYYY/Mon/MM-DD-YYYY.md` on login; created if missing; auto-deleted if navigated away from while still empty
+- Wiki-links: `[[Note Name]]` and `[[Note|Label]]`; alias resolution via frontmatter `aliases` field
+- YAML frontmatter: Obsidian-compatible subset parser; `tags`, `aliases`, and arbitrary properties displayed above document content
+- Daily journal: calendar button in sidebar toolbar; auto-opens `journal/YYYY/Mon/MM-DD-YYYY.md`; created if missing; auto-deleted on navigate-away if still empty
 - File metadata footer (created date, last updated) rendered below each note
+- Hidden files and directories (dotfiles) hidden by default; controllable via `show_hidden_files` config
 - Login gate (API key); key stored in browser `localStorage`
 
 ### Sync API ✅ M1 (foundation)
@@ -132,7 +136,10 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 | `auth.api_key` | `HASH_API_KEY` | *(required)* | |
 | `ui.secondary_color` | `HASH_SECONDARY_COLOR` | `#aaff00` | Any CSS hex color |
 | `ui.default_theme` | `HASH_DEFAULT_THEME` | `system` | `light`, `dark`, `system` |
-| `ui.editor_labels` | `HASH_EDITOR_LABELS` | `false` | `true` to show Edit/Split/Preview text |
+| `ui.editor_labels` | `HASH_EDITOR_LABELS` | `false` | `true` to show Edit/Split/Preview text labels |
+| `ui.show_hidden_files` | `HASH_SHOW_HIDDEN_FILES` | `false` | `true` to show dotfiles in the file tree |
+| `ui.line_numbers` | `HASH_LINE_NUMBERS` | `false` | `true` to show line numbers in the editor |
+| `ui.spell_check` | `HASH_SPELL_CHECK` | `false` | `true` to enable browser spell-check in the editor |
 
 ---
 
@@ -170,6 +177,68 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 | SMB file watching | 30s polling | inotify unreliable over SMB |
 | Docker base image | Chainguard glibc-dynamic | Near-zero CVE distroless runtime |
 | Container registry | GitHub Container Registry (ghcr.io) | Free for public repos; built into CI |
+
+---
+
+## Note Format Specification
+
+Notes are plain UTF-8 text files. This format is a stable contract — nothing in this section changes without a migration.
+
+| Element | Specification |
+|---|---|
+| Encoding | UTF-8, Unix line endings preferred |
+| Extension | `.md` (required for search and rendering) |
+| Frontmatter | Optional YAML block between `---` markers at the very start of the file |
+| Body | CommonMark + GFM (tables, task lists, strikethrough, fenced code blocks) |
+| Wiki-links | `[[Note Name]]` and `[[Note Name\|Label]]` |
+| Attachments | Any file in the vault; referenced by relative path in standard markdown image/link syntax |
+
+### Frontmatter fields (Obsidian-compatible subset)
+
+| Field | Type | Notes |
+|---|---|---|
+| `title` | string | Display name; used for wiki-link resolution |
+| `tags` / `tag` | string or array | Rendered as chips in the viewer |
+| `aliases` / `alias` | string or array | Alternate names for wiki-link resolution |
+| `created` | date string | Informational; not parsed by the server |
+| `updated` | date string | Informational; not parsed by the server |
+| *(any other key)* | scalar or array | Displayed as key-value pairs in the properties panel |
+
+---
+
+## Backwards Compatibility Policy
+
+#ash treats note files as the source of truth. The format must remain readable by older and newer versions alike.
+
+### Rules
+
+1. **Notes are always backwards-compatible.** A note written for v0.0.1 must render correctly in all future versions without modification.
+2. **New frontmatter fields are always optional.** Older clients that do not recognise a field must ignore it gracefully.
+3. **Breaking changes require a migration.** If a server change would cause existing notes to render incorrectly or lose data, a vault schema migration must be written and shipped alongside it.
+4. **Migrations are opt-in for the user.** The server logs migration activity and never silently modifies note content without bumping `schema_version`.
+5. **Migrations are idempotent.** Re-running a migration against an already-migrated vault must be safe.
+
+### Vault schema versioning
+
+The server tracks the vault's schema version in `.mdkb/vault.toml`:
+
+```toml
+schema_version = 1
+```
+
+On every startup the server reads this file and runs any pending migrations in order, then updates the recorded version. Vaults created before v0.0.3 (which did not have this file) are treated as schema v0 and automatically stamped to v1 on first run (no content changes required).
+
+### What constitutes a breaking change
+
+| Change | Breaking? | Action required |
+|---|---|---|
+| Adding a new optional frontmatter field | No | None |
+| Adding a new markdown extension | No | None |
+| Adding a new config option with a safe default | No | None |
+| Renaming an existing frontmatter field | Yes | Migration to rewrite affected notes; support old name as alias during transition |
+| Changing journal path format | Yes | Migration to move existing journal entries |
+| Changing wiki-link resolution semantics | Yes | Document transition; migration if old links would silently break |
+| Changing `.mdkb/` metadata format | Internal only | Migration; no note content affected |
 
 ---
 
@@ -220,15 +289,15 @@ Requests collected from early users — not yet scheduled for implementation:
 |---|---|
 | Full theming | Custom color schemes beyond accent color; CSS variable overrides; theme gallery |
 | MermaidJS diagrams | Render `mermaid` fenced code blocks as flowcharts, sequence diagrams, etc. |
-| Obsidian vault compatibility | Import and correctly render vaults created by Obsidian (attachments, properties, callouts) |
 | MARP slide decks | Render MARP-formatted markdown as presentation slides in-browser |
-| Focus mode | Distraction-free writing view: hide sidebar, toolbar, and chrome; toggled via keyboard shortcut |
+| Focus mode | Distraction-free writing view: hide sidebar and chrome; toggled via keyboard shortcut |
 | Auto-continue lists | When pressing Enter inside a list item, automatically insert the next list marker (`-`, `1.`, `- [ ]`) |
 | Version update notification | Check for new releases and show a badge/prompt when a newer version is available |
 | Configure page | In-app UI to edit `config.toml` fields (accent color, theme, vault path, API key rotation) with field descriptions and live preview |
-| Tagging | Tag notes via YAML frontmatter or inline `#tag` syntax; tags stored alongside date metadata in the footer; filter/browse by tag |
-| Hack font for editor | Use [Hack](https://github.com/source-foundry/Hack) monospace font in the raw markdown editor pane |
-| Jump to today's journal | One-click button (sidebar or toolbar) to open or create today's journal entry |
+| Image rendering | Render images stored in the vault directory; serve vault assets via `/api/files/*`; resolve relative paths in `![alt](path)` syntax |
+| Tag browser | Filter and browse notes by tag; sidebar panel or search integration |
+| Vault symlinks | Symlink files or directories from outside the vault into it (e.g. `vault/hash/ -> project docs`); requires WalkDir to preserve symlink-relative paths while reading through to target content |
+| Vim keybindings | Optional vim modal editing (normal/insert/visual) in the editor pane; controlled via `vim_mode` config flag |
 
 ---
 
@@ -253,3 +322,5 @@ Requests collected from early users — not yet scheduled for implementation:
 | 0.3 | 2026-03-15 | Storage, auth, port, markdown flavor resolved |
 | 0.4 | 2026-03-15 | All open questions closed; AGENTS.md added |
 | 0.5 | 2026-03-15 | M0 and M1 complete; feature backlog added |
+| 0.6 | 2026-03-16 | v0.0.3 RC: YAML frontmatter, journal button, hidden files config, line numbers, floating mode panel, search ranking, save dot, light mode contrast; backlog updated |
+| 0.7 | 2026-03-16 | Note Format Specification and Backwards Compatibility Policy added; vault schema versioning and migration runner added (schema v1); spell-check config added |

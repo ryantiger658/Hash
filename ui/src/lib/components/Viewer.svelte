@@ -1,6 +1,7 @@
 <script>
   import { createEventDispatcher } from 'svelte'
   import { renderMarkdown } from '../markdown.js'
+  import { parseFrontmatter, normalizeTags, normalizeArray } from '../frontmatter.js'
 
   export let content = ''
   /** FileEntry from the server — provides created/modified timestamps. */
@@ -8,7 +9,23 @@
 
   const dispatch = createEventDispatcher()
 
-  $: html = renderMarkdown(content)
+  // Parse frontmatter once; derive everything from the single result
+  const KNOWN = new Set(['tags', 'tag', 'aliases', 'alias'])
+  let _fm = { meta: {}, body: '' }
+
+  $: {
+    try {
+      _fm = parseFrontmatter(content)
+    } catch (_) {
+      _fm = { meta: {}, body: content ?? '' }
+    }
+  }
+
+  $: html        = renderMarkdown(_fm.body)
+  $: tags        = normalizeTags(_fm.meta.tags ?? _fm.meta.tag)
+  $: aliases     = normalizeArray(_fm.meta.aliases ?? _fm.meta.alias)
+  $: otherFields = Object.entries(_fm.meta).filter(([k]) => !KNOWN.has(k))
+  $: hasFrontmatter = tags.length > 0 || aliases.length > 0 || otherFields.length > 0
 
   function fmtDate(unix) {
     if (!unix) return null
@@ -43,6 +60,33 @@
 
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 <div class="viewer prose" on:click={handleClick} on:change={handleChange}>
+  {#if hasFrontmatter}
+    <div class="fm-props">
+      {#if tags.length}
+        <div class="fm-row">
+          <span class="fm-key">tags</span>
+          <div class="fm-tags">
+            {#each tags as tag}
+              <span class="tag-chip">{tag}</span>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if aliases.length}
+        <div class="fm-row">
+          <span class="fm-key">aliases</span>
+          <span class="fm-val">{aliases.join(', ')}</span>
+        </div>
+      {/if}
+      {#each otherFields as [key, val]}
+        <div class="fm-row">
+          <span class="fm-key">{key}</span>
+          <span class="fm-val">{Array.isArray(val) ? val.join(', ') : String(val ?? '')}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   {@html html}
 
   {#if modifiedStr}
@@ -194,6 +238,61 @@
 
   .sep {
     opacity: 0.4;
+  }
+
+  /* ── Frontmatter properties panel ───────────────────────────────────── */
+  .fm-props {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: var(--color-surface);
+  }
+
+  .fm-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .fm-key {
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    min-width: 60px;
+    flex-shrink: 0;
+  }
+
+  .fm-val {
+    color: var(--color-text);
+  }
+
+  .fm-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--color-accent-dim);
+    color: var(--color-accent);
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+    white-space: nowrap;
+  }
+
+  .tag-chip::before {
+    content: '#';
+    opacity: 0.6;
+    margin-right: 1px;
   }
 
   /* ── Color chip (hex color preview in inline code) ────────────────────── */

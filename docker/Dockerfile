@@ -38,7 +38,7 @@ COPY --from=ui-builder /app/server/static ./server/static
 # Prepare vault seed — copied to /vault in the runtime image so that Docker
 # initialises a new named volume with welcome content and nonroot ownership.
 RUN mkdir -p /vault-seed
-COPY dev/vault/Welcome.md dev/vault/Getting-Started.md /vault-seed/
+COPY vault/Welcome.md vault/Getting-Started.md /vault-seed/
 
 
 # ── Stage 3: Minimal distroless runtime ──────────────────────────────────────

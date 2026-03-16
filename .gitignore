@@ -22,12 +22,8 @@ desktop/src-tauri/WixTools/
 *.msi
 *.exe
 
-# Config with secrets (root and dev/)
+# Config with secrets
 config.toml
-dev/config.toml
-
-# Dev vault — tracked files are the default getting-started content.
-# Add your own notes freely; git will only track what you explicitly add.
 
 # OS
 .DS_Store
@@ -41,3 +37,8 @@ Thumbs.db
 
 # #ash vault metadata (not committed — lives on the mounted volume)
 .mdkb/
+
+vault/*
+vault/**
+!vault/Getting-Started.md
+!vault/Welcome.md

@@ -1,36 +1,14 @@
 services:
   hash:
-    image: hashash:latest
-    # Or build locally:
-    # build:
-    #   context: ..
-    #   dockerfile: docker/Dockerfile
+    image: ghcr.io/ryantiger658/hash:latest
     container_name: hash
     restart: unless-stopped
     ports:
       - "3535:3535"
     volumes:
-      # Named volume for the vault — data persists across container restarts.
-      # To use a host path or SMB share instead, replace with:
-      #   - /mnt/your-smb-share:/vault
       - vault:/vault
-      # Optional: mount a config file to override env vars below.
-      # Copy server/config.example.toml → docker/config.toml and uncomment:
-      # - ./config.toml:/app/config.toml:ro
     environment:
-      # Required — set a strong random key: openssl rand -hex 32
-      HASH_API_KEY: "change-me-before-deploying"
-      # Vault path inside the container (matches the volume mount above)
+      HASH_API_KEY: "change-me"
       HASH_VAULT_PATH: /vault
-      # Server bind address and port
-      HASH_HOST: "0.0.0.0"
-      HASH_PORT: "3535"
-      # UI defaults (optional)
-      HASH_SECONDARY_COLOR: "#aaff00"
-      # HASH_EDITOR_LABELS: "false"   # set to "true" to show Edit/Split/Preview text
-      HASH_DEFAULT_THEME: "system"
-      # Log level (optional): debug | info | warn | error
-      RUST_LOG: "hash_server=info"
-
 volumes:
   vault:

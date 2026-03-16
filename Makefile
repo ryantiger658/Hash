@@ -6,9 +6,9 @@
 #   make dev     ← start server + UI dev server together
 
 # ── Config ────────────────────────────────────────────────────────────────────
-DEV_CONFIG  := dev/config.toml
-DEV_VAULT   := dev/vault
-DOCKER_TAG  := hashash:latest
+DEV_CONFIG  := config.toml
+DEV_VAULT   := vault
+DOCKER_TAG  := hash:latest
 DOCKER_FILE := docker/Dockerfile
 
 # Pass the dev config to the server automatically.
@@ -168,23 +168,23 @@ check:
 # ── Docker ────────────────────────────────────────────────────────────────────
 .PHONY: docker-up
 docker-up: build-docker
-	docker compose -f docker/docker-compose.yml up -d
+	HASH_IMAGE=$(DOCKER_TAG) docker compose -f docker/docker-compose.dev.yml up -d
 	@echo "  #ash running at http://localhost:3535"
 
 .PHONY: docker-down
 docker-down:
-	docker compose -f docker/docker-compose.yml down
+	docker compose -f docker/docker-compose.dev.yml down
 
 .PHONY: docker-logs
 docker-logs:
-	docker compose -f docker/docker-compose.yml logs -f
+	docker compose -f docker/docker-compose.dev.yml logs -f
 
 
 # ── Security ──────────────────────────────────────────────────────────────────
 .PHONY: scan
 scan: build-docker
 	@which grype > /dev/null 2>&1 || brew install anchore/grype/grype
-	grype hashash:latest
+	grype hash:latest
 
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
