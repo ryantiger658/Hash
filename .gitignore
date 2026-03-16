@@ -21,8 +21,13 @@ desktop/src-tauri/WixTools/
 *.msi
 *.exe
 
-# Config with secrets
+# Config with secrets (root and dev/)
 config.toml
+dev/config.toml
+
+# Dev vault contents (keep the directory, ignore everything inside)
+dev/vault/*
+!dev/vault/.gitkeep
 
 # OS
 .DS_Store
