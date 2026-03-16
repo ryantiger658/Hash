@@ -54,7 +54,9 @@ impl Vault {
             .into_iter()
             // filter_entry prunes entire subtrees so hidden dirs aren't descended into.
             .filter_entry(|e| {
-                if e.depth() == 0 { return true } // always allow vault root
+                if e.depth() == 0 {
+                    return true;
+                } // always allow vault root
                 let name = e.file_name().to_str().unwrap_or("");
                 // Always prune .mdkb; prune other dotfiles when show_hidden is false.
                 name != ".mdkb" && (show_hidden || !name.starts_with('.'))
@@ -155,9 +157,8 @@ impl Vault {
 
     /// Write the vault schema version to `.mdkb/vault.toml`.
     pub fn write_schema_version(&self, version: u32) -> Result<()> {
-        let content = format!(
-            "# #ash vault metadata — do not edit manually\nschema_version = {version}\n"
-        );
+        let content =
+            format!("# #ash vault metadata — do not edit manually\nschema_version = {version}\n");
         self.write_file(".mdkb/vault.toml", content.as_bytes())
     }
 
