@@ -41,7 +41,12 @@
 
 <div class="search-wrap">
   <div class="input-row">
-    <span class="icon">🔍</span>
+    <span class="icon">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="7" cy="7" r="5"/>
+        <line x1="11" y1="11" x2="14.5" y2="14.5"/>
+      </svg>
+    </span>
     <input
       type="search"
       bind:value={query}
@@ -94,8 +99,10 @@
   }
 
   .icon {
-    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
     flex-shrink: 0;
+    color: var(--color-text-muted);
   }
 
   input {

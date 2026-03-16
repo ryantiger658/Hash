@@ -3,10 +3,23 @@
   import { renderMarkdown } from '../markdown.js'
 
   export let content = ''
+  /** FileEntry from the server — provides created/modified timestamps. */
+  export let file = null
 
   const dispatch = createEventDispatcher()
 
   $: html = renderMarkdown(content)
+
+  function fmtDate(unix) {
+    if (!unix) return null
+    return new Date(unix * 1000).toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    })
+  }
+
+  $: createdStr  = file ? fmtDate(file.created)  : null
+  $: modifiedStr = file ? fmtDate(file.modified) : null
 
   // Handle clicks on wiki-links inside the rendered HTML
   function handleClick(e) {
@@ -22,6 +35,14 @@
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 <div class="viewer prose" on:click={handleClick}>
   {@html html}
+
+  {#if modifiedStr}
+    <footer class="meta-footer">
+      {#if createdStr}<span>Created {createdStr}</span>{/if}
+      {#if createdStr && modifiedStr}<span class="sep">·</span>{/if}
+      {#if modifiedStr}<span>Updated {modifiedStr}</span>{/if}
+    </footer>
+  {/if}
 </div>
 
 <style>
@@ -148,5 +169,21 @@
   .viewer :global(img) {
     max-width: 100%;
     border-radius: 6px;
+  }
+
+  .meta-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 3rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    user-select: none;
+  }
+
+  .sep {
+    opacity: 0.4;
   }
 </style>

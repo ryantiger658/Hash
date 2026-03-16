@@ -15,23 +15,30 @@ RUN BUILD_TARGET=server npm run build
 # Chainguard Rust image (Wolfi/glibc-based)
 FROM cgr.dev/chainguard/rust:latest-dev AS server-builder
 
-WORKDIR /app/server
+USER root
+WORKDIR /app
 
-# Copy manifests first — Docker caches this layer until Cargo.toml/lock changes
-COPY server/Cargo.toml server/Cargo.lock ./
+# Copy workspace manifests — Docker caches this layer until they change
+COPY Cargo.toml Cargo.lock ./
+COPY server/Cargo.toml ./server/
 
 # Stub binary so cargo can pre-build all dependencies as a cache layer
-RUN mkdir src && echo 'fn main() {}' > src/main.rs
-RUN cargo build --release
-RUN rm -rf src
+RUN mkdir -p server/src && echo 'fn main() {}' > server/src/main.rs && echo '' > server/src/lib.rs
+RUN cargo build --release -p hash-server
+RUN rm -rf server/src
 
 # Now build the real server
-COPY server/src ./src
+COPY server/src ./server/src
 # Touch main.rs to force Cargo to re-link after the stub
-RUN touch src/main.rs && cargo build --release
+RUN touch server/src/main.rs server/src/lib.rs && cargo build --release -p hash-server
 
 # Copy compiled UI into the place the binary expects at runtime
-COPY --from=ui-builder /app/server/static ./static
+COPY --from=ui-builder /app/server/static ./server/static
+
+# Prepare vault seed — copied to /vault in the runtime image so that Docker
+# initialises a new named volume with welcome content and nonroot ownership.
+RUN mkdir -p /vault-seed
+COPY dev/vault/Welcome.md dev/vault/Getting-Started.md /vault-seed/
 
 
 # ── Stage 3: Minimal distroless runtime ──────────────────────────────────────
@@ -40,10 +47,14 @@ FROM cgr.dev/chainguard/glibc-dynamic:latest
 
 WORKDIR /app
 
-COPY --from=server-builder /app/server/target/release/hash-server ./hash-server
+COPY --from=server-builder /app/target/release/hash-server ./hash-server
 COPY --from=server-builder /app/server/static ./static
 
-# Vault is mounted here at runtime (e.g. SMB share via Portainer)
+# Seed vault with welcome content, owned by nonroot (uid 65532).
+# Docker copies this directory into a new named volume on first mount —
+# welcome notes appear automatically and the nonroot user can write to the vault.
+COPY --chown=65532:65532 --from=server-builder /vault-seed /vault
+
 VOLUME ["/vault"]
 
 ENV HASH_CONFIG=/app/config.toml

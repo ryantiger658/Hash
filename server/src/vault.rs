@@ -18,6 +18,8 @@ pub struct FileEntry {
     pub checksum: String,
     /// Last modified timestamp (Unix seconds).
     pub modified: i64,
+    /// Creation timestamp (Unix seconds). None on platforms that don't expose it.
+    pub created: Option<i64>,
     /// File size in bytes.
     pub size: u64,
 }
@@ -48,12 +50,17 @@ impl Vault {
                 .modified()?
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs() as i64;
+            let created = meta.created()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64);
             let checksum = checksum_file(path)?;
 
             entries.push(FileEntry {
                 path: rel,
                 checksum,
                 modified,
+                created,
                 size: meta.len(),
             });
         }

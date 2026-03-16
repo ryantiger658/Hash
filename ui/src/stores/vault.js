@@ -22,6 +22,12 @@ export const isDirty = derived(
   ([$fc, $sc]) => $fc !== $sc
 )
 
+/** The FileEntry for the currently open file, or null. */
+export const selectedFile = derived(
+  [files, selectedPath],
+  ([$files, $path]) => $files.find(f => f.path === $path) ?? null
+)
+
 /**
  * File tree built from the flat file list.
  * Each node: { name, path, isDir, children? }
@@ -41,12 +47,49 @@ export async function loadVault() {
   }
 }
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+/** Open today's journal entry, creating it if it doesn't exist yet. */
+export async function openTodayJournal() {
+  const today = new Date()
+  const yyyy  = today.getFullYear()
+  const mm    = String(today.getMonth() + 1).padStart(2, '0')
+  const dd    = String(today.getDate()).padStart(2, '0')
+  const mon   = MONTHS[today.getMonth()]
+  const datestamp = `${mm}-${dd}-${yyyy}`
+  const path = `journal/${yyyy}/${mon}/${datestamp}.md`
+
+  const list = get(files)
+  if (list.find(f => f.path === path)) {
+    await selectFile(path)
+  } else {
+    const heading = `# ${datestamp}\n\n`
+    await api.putFile(path, heading)
+    await loadVault()
+    await selectFile(path)
+  }
+}
+
 /** Open a file: fetch its content and set it as the active editor document. */
 export async function selectFile(path) {
+  // Silently delete the previous journal entry if it's still blank
+  const prevPath = get(selectedPath)
+  if (prevPath && prevPath !== path && isBlankJournal(prevPath, get(savedContent))) {
+    api.deleteFile(prevPath).then(() => loadVault()).catch(() => {})
+  }
+
   selectedPath.set(path)
   const text = await api.getFile(path)
   fileContent.set(text)
   savedContent.set(text)
+}
+
+/** True if `path` is a journal file whose content is only the auto-generated heading. */
+function isBlankJournal(path, content) {
+  if (!/^journal\/\d{4}\/[A-Za-z]{3}\/\d{2}-\d{2}-\d{4}\.md$/.test(path)) return false
+  const filename = path.split('/').pop().replace('.md', '')
+  const trimmed = content.trim()
+  return trimmed === '' || trimmed === `# ${filename}`
 }
 
 /** Create a new empty file at the given vault-relative path. */
@@ -56,6 +99,22 @@ export async function createFile(path) {
   await api.putFile(fullPath, '')
   await loadVault()
   await selectFile(fullPath)
+}
+
+/**
+ * Delete every file whose path starts with `folderPath/`.
+ * Clears the editor if the open file was inside the folder.
+ */
+export async function deleteFolder(folderPath) {
+  const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
+  const toDelete = get(files).filter(f => f.path.startsWith(prefix))
+  await Promise.all(toDelete.map(f => api.deleteFile(f.path)))
+  if (get(selectedPath)?.startsWith(prefix)) {
+    selectedPath.set(null)
+    fileContent.set('')
+    savedContent.set('')
+  }
+  await loadVault()
 }
 
 /** Delete a file. Clears the editor if the deleted file was open. */

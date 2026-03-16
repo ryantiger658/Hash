@@ -1,9 +1,11 @@
 <script>
   import { fileContent, saveStatus, isDirty, scheduleAutoSave } from '../../stores/vault.js'
+  import { editorLabels } from '../../lib/theme.js'
   import Viewer from './Viewer.svelte'
   import { createEventDispatcher } from 'svelte'
 
   export let mode = 'split' // 'edit' | 'preview' | 'split'
+  export let file = null    // FileEntry — passed to Viewer for metadata footer
 
   const dispatch = createEventDispatcher()
 
@@ -27,9 +29,29 @@
 <div class="editor-wrap">
   <div class="toolbar">
     <div class="modes">
-      <button class:active={mode === 'edit'}    on:click={() => (mode = 'edit')}>Edit</button>
-      <button class:active={mode === 'split'}   on:click={() => (mode = 'split')}>Split</button>
-      <button class:active={mode === 'preview'} on:click={() => (mode = 'preview')}>Preview</button>
+      <button class:active={mode === 'edit'}    on:click={() => (mode = 'edit')}    title="Edit">
+        <!-- Pencil -->
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/>
+        </svg>
+        {#if $editorLabels}<span>Edit</span>{/if}
+      </button>
+      <button class:active={mode === 'split'}   on:click={() => (mode = 'split')}   title="Split">
+        <!-- Two columns -->
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="2" width="6" height="12" rx="1.5"/>
+          <rect x="9" y="2" width="6" height="12" rx="1.5"/>
+        </svg>
+        {#if $editorLabels}<span>Split</span>{/if}
+      </button>
+      <button class:active={mode === 'preview'} on:click={() => (mode = 'preview')} title="Preview">
+        <!-- Eye -->
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 8s3-4.5 7-4.5S15 8 15 8s-3 4.5-7 4.5S1 8 1 8z"/>
+          <circle cx="8" cy="8" r="2"/>
+        </svg>
+        {#if $editorLabels}<span>Preview</span>{/if}
+      </button>
     </div>
     <span class="save-status" class:dirty={$isDirty} class:error={$saveStatus === 'error'}>
       {$isDirty && $saveStatus === 'idle' ? '● Unsaved' : saveLabels[$saveStatus]}
@@ -50,7 +72,7 @@
 
     {#if mode === 'preview' || mode === 'split'}
       <div class="preview" class:full={mode === 'preview'}>
-        <Viewer content={$fileContent} on:wikilink={onWikiLink} />
+        <Viewer content={$fileContent} {file} on:wikilink={onWikiLink} />
       </div>
     {/if}
   </div>
@@ -68,14 +90,15 @@
   .toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 0.35rem 0.75rem;
     border-bottom: 1px solid var(--color-border);
     background: var(--color-surface);
     flex-shrink: 0;
+    gap: 0.5rem;
   }
 
   .modes {
+    margin-left: auto;
     display: flex;
     gap: 2px;
     background: var(--color-bg);

@@ -33,14 +33,56 @@ pub struct AuthConfig {
 }
 
 impl Config {
-    /// Load configuration from config.toml, or the path in NOTCH_CONFIG env var.
+    /// Load configuration from a TOML file, falling back to environment variables.
+    ///
+    /// Resolution order:
+    /// 1. The file at `HASH_CONFIG` (or `config.toml` if unset), if it exists.
+    /// 2. Environment variables (useful for Docker / container deployments):
+    ///    - `HASH_HOST`           (default: 0.0.0.0)
+    ///    - `HASH_PORT`           (default: 3535)
+    ///    - `HASH_VAULT_PATH`     (required if no config file)
+    ///    - `HASH_API_KEY`        (required if no config file)
+    ///    - `HASH_SECONDARY_COLOR`
+    ///    - `HASH_DEFAULT_THEME`
     pub fn load() -> Result<Self> {
         let path = std::env::var("HASH_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
-        let contents = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read config file: {path}"))?;
-        let config: Config =
-            toml::from_str(&contents).with_context(|| "Failed to parse config.toml")?;
-        Ok(config)
+
+        if let Ok(contents) = fs::read_to_string(&path) {
+            return toml::from_str(&contents)
+                .with_context(|| format!("Failed to parse config file: {path}"));
+        }
+
+        // No config file — build from environment variables.
+        Ok(Config {
+            server: ServerConfig {
+                host: std::env::var("HASH_HOST").unwrap_or_else(|_| default_host()),
+                port: std::env::var("HASH_PORT")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(default_port),
+            },
+            vault: VaultConfig {
+                path: std::env::var("HASH_VAULT_PATH")
+                    .context("HASH_VAULT_PATH must be set when no config.toml is present")?,
+                poll_interval_secs: std::env::var("HASH_POLL_INTERVAL")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(default_poll_interval),
+            },
+            auth: AuthConfig {
+                api_key: std::env::var("HASH_API_KEY")
+                    .context("HASH_API_KEY must be set when no config.toml is present")?,
+            },
+            ui: UiConfig {
+                secondary_color: std::env::var("HASH_SECONDARY_COLOR")
+                    .unwrap_or_else(|_| default_secondary_color()),
+                default_theme: std::env::var("HASH_DEFAULT_THEME")
+                    .unwrap_or_else(|_| default_theme()),
+                editor_labels: std::env::var("HASH_EDITOR_LABELS")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
+            },
+        })
     }
 }
 
@@ -52,6 +94,10 @@ pub struct UiConfig {
     /// Default theme. One of: "light", "dark", "system".
     #[serde(default = "default_theme")]
     pub default_theme: String,
+    /// Show text labels on editor mode buttons (Edit/Split/Preview).
+    /// Defaults to false (icon-only). Set to true to restore text labels.
+    #[serde(default)]
+    pub editor_labels: bool,
 }
 
 impl Default for UiConfig {
@@ -59,6 +105,7 @@ impl Default for UiConfig {
         Self {
             secondary_color: default_secondary_color(),
             default_theme: default_theme(),
+            editor_labels: false,
         }
     }
 }
@@ -76,7 +123,7 @@ fn default_poll_interval() -> u64 {
 }
 
 fn default_secondary_color() -> String {
-    "#6366f1".to_string() // indigo
+    "#aaff00".to_string() // chartreuse
 }
 
 fn default_theme() -> String {

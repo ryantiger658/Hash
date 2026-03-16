@@ -11,20 +11,16 @@
 
   const dispatch = createEventDispatcher()
 
-  // Track which folders are open
   let open = {}
 
-  function toggle(node) {
-    open[node.path] = !open[node.path]
-  }
+  function toggle(node) { open[node.path] = !open[node.path] }
+  function select(node) { dispatch('select', node.path) }
+  function bubble(e)    { dispatch('select', e.detail) }
+  function bubbleDelete(e) { dispatch('delete-folder', e.detail) }
 
-  function select(node) {
-    dispatch('select', node.path)
-  }
-
-  // Bubble events from nested trees up to the root
-  function bubble(e) {
-    dispatch('select', e.detail)
+  function confirmDeleteFolder(node) {
+    const msg = `Delete folder "${node.name}" and all its contents? This cannot be undone.`
+    if (confirm(msg)) dispatch('delete-folder', node.path)
   }
 </script>
 
@@ -32,18 +28,37 @@
   {#each nodes as node (node.path)}
     <li>
       {#if node.isDir}
-        <button
-          class="tree-row folder"
-          style="padding-left: {depth * 14 + 8}px"
-          on:click={() => toggle(node)}
-          aria-expanded={!!open[node.path]}
-        >
-          <span class="arrow" class:open={open[node.path]}>›</span>
-          <span class="icon">📁</span>
-          <span class="name">{node.name}</span>
-        </button>
+        <div class="folder-row-wrap">
+          <button
+            class="tree-row folder"
+            style="padding-left: {depth * 14 + 8}px"
+            on:click={() => toggle(node)}
+            aria-expanded={!!open[node.path]}
+            title={node.name}
+          >
+            <span class="arrow" class:open={open[node.path]}>›</span>
+            <span class="icon">
+              <!-- Folder -->
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 5a1 1 0 011-1h3l1.5 1.5H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1V5z"/>
+              </svg>
+            </span>
+            <span class="name">{node.name}</span>
+          </button>
+          <button
+            class="folder-delete"
+            title="Delete folder"
+            on:click|stopPropagation={() => confirmDeleteFolder(node)}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 4h12"/>
+              <path d="M5 4V2h6v2"/>
+              <path d="M3 4l1 10h8l1-10"/>
+            </svg>
+          </button>
+        </div>
         {#if open[node.path]}
-          <svelte:self nodes={node.children} depth={depth + 1} on:select={bubble} />
+          <svelte:self nodes={node.children} depth={depth + 1} on:select={bubble} on:delete-folder={bubbleDelete} />
         {/if}
       {:else}
         <button
@@ -51,8 +66,15 @@
           class:active={$selectedPath === node.path}
           style="padding-left: {depth * 14 + 8}px"
           on:click={() => select(node)}
+          title={node.name}
         >
-          <span class="icon">📄</span>
+          <span class="icon">
+            <!-- Document -->
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/>
+              <path d="M10 2v3h3"/>
+            </svg>
+          </span>
           <span class="name">{node.name.replace(/\.md$/, '')}</span>
         </button>
       {/if}
@@ -74,6 +96,43 @@
   li {
     display: flex;
     flex-direction: column;
+  }
+
+  .folder-row-wrap {
+    display: flex;
+    align-items: center;
+    position: relative;
+  }
+
+  .folder-row-wrap .tree-row {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .folder-delete {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    margin-right: 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .folder-row-wrap:hover .folder-delete {
+    display: flex;
+  }
+
+  .folder-delete:hover {
+    color: #f87171;
+    background: var(--color-border);
   }
 
   .tree-row {
@@ -102,9 +161,9 @@
   }
 
   .tree-row.active {
-    background: var(--color-accent-dim);
-    color: var(--color-accent);
-    font-weight: 500;
+    background: var(--color-accent);
+    color: #000;
+    font-weight: 600;
   }
 
   .arrow {

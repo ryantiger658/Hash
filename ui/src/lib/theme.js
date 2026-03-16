@@ -5,17 +5,22 @@
  * - Light/dark preference is stored in localStorage, with "system" as the default.
  * - Both are applied as CSS custom properties on <html>.
  */
+import { writable } from 'svelte/store'
 
 export const THEMES = ['light', 'dark', 'system']
+
+/** Whether editor mode buttons should show text labels (server-configured). */
+export const editorLabels = writable(false)
 
 /** Fetch UI config from the server and apply the accent color. */
 export async function loadServerTheme() {
   try {
     const res = await fetch('/api/ui-config')
     if (!res.ok) return
-    const { secondary_color, default_theme } = await res.json()
+    const { secondary_color, default_theme, editor_labels } = await res.json()
 
     applyAccentColor(secondary_color)
+    editorLabels.set(!!editor_labels)
 
     // Only apply the server's default_theme if the user hasn't saved a preference.
     if (!localStorage.getItem('hash-theme')) {

@@ -167,7 +167,7 @@ check:
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 .PHONY: docker-up
-docker-up:
+docker-up: build-docker
 	docker compose -f docker/docker-compose.yml up -d
 	@echo "  #ash running at http://localhost:3535"
 

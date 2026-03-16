@@ -3,8 +3,9 @@
   import { loadServerTheme, setTheme, getStoredTheme } from './lib/theme.js'
   import { hasApiKey, clearApiKey } from './lib/api.js'
   import {
-    fileTree, files, selectedPath, fileContent, isDirty,
-    loadVault, selectFile, createFile, deleteCurrentFile, saveCurrentFile,
+    fileTree, files, selectedPath, selectedFile, fileContent, isDirty,
+    loadVault, selectFile, createFile, deleteCurrentFile, deleteFolder,
+    saveCurrentFile, openTodayJournal,
   } from './stores/vault.js'
   import { get } from 'svelte/store'
 
@@ -17,9 +18,10 @@
   // ── Auth state ───────────────────────────────────────────────────────────
   let authenticated = hasApiKey()
 
-  function onLogin() {
+  async function onLogin() {
     authenticated = true
-    loadVault()
+    await loadVault()
+    await openTodayJournal()
   }
 
   function logout() {
@@ -32,13 +34,15 @@
   // ── Theme ────────────────────────────────────────────────────────────────
   let currentTheme = getStoredTheme()
   const themeOrder = ['light', 'dark', 'system']
-  const themeIcon  = { light: '☀️', dark: '🌙', system: '💻' }
 
   function cycleTheme() {
     const next = themeOrder[(themeOrder.indexOf(currentTheme) + 1) % themeOrder.length]
     currentTheme = next
     setTheme(next)
   }
+
+  // ── Sidebar (mobile drawer) ──────────────────────────────────────────────
+  let sidebarOpen = false
 
   // ── New note modal ───────────────────────────────────────────────────────
   let showNewModal = false
@@ -51,12 +55,17 @@
   async function handleSelect(e) {
     const path = typeof e === 'string' ? e : e.detail
     await selectFile(path)
+    sidebarOpen = false  // close drawer on mobile after selecting a file
   }
 
   async function handleDelete() {
     if (!$selectedPath) return
     if (!confirm(`Delete "${$selectedPath}"? This cannot be undone.`)) return
     await deleteCurrentFile()
+  }
+
+  async function handleDeleteFolder(e) {
+    await deleteFolder(e.detail)
   }
 
   // Resolve a wiki-link: find best matching file by name or path
@@ -84,9 +93,12 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadServerTheme()
-    if (authenticated) loadVault()
+    if (authenticated) {
+      await loadVault()
+      await openTodayJournal()
+    }
   })
 </script>
 
@@ -98,35 +110,87 @@
   <div class="app">
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <header>
-      <span class="logo">#ash</span>
+      <button class="icon-btn menu-btn" on:click={() => (sidebarOpen = !sidebarOpen)} title="Menu">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="2" y1="4" x2="14" y2="4"/>
+          <line x1="2" y1="8" x2="14" y2="8"/>
+          <line x1="2" y1="12" x2="14" y2="12"/>
+        </svg>
+      </button>
+
+      <span class="logo">#</span>
 
       <SearchBar on:select={handleSelect} />
 
       <nav class="header-actions">
-        <button class="icon-btn" on:click={cycleTheme} title="Theme: {currentTheme}">
-          {themeIcon[currentTheme]}
+        <button class="icon-btn theme-btn" on:click={cycleTheme} title="Theme: {currentTheme}">
+          {#if currentTheme === 'light'}
+            <!-- Sun -->
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8" cy="8" r="3"/>
+              <line x1="8" y1="1" x2="8" y2="3"/>
+              <line x1="8" y1="13" x2="8" y2="15"/>
+              <line x1="1" y1="8" x2="3" y2="8"/>
+              <line x1="13" y1="8" x2="15" y2="8"/>
+              <line x1="3.05" y1="3.05" x2="4.46" y2="4.46"/>
+              <line x1="11.54" y1="11.54" x2="12.95" y2="12.95"/>
+              <line x1="12.95" y1="3.05" x2="11.54" y2="4.46"/>
+              <line x1="4.46" y1="11.54" x2="3.05" y2="12.95"/>
+            </svg>
+          {:else if currentTheme === 'dark'}
+            <!-- Moon -->
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 10A6 6 0 016 3a6 6 0 100 10 6 6 0 007-3z"/>
+            </svg>
+          {:else}
+            <!-- Monitor -->
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="2" width="14" height="10" rx="1.5"/>
+              <line x1="5" y1="14" x2="11" y2="14"/>
+              <line x1="8" y1="12" x2="8" y2="14"/>
+            </svg>
+          {/if}
         </button>
-        <button class="icon-btn muted" on:click={logout} title="Disconnect">⏏</button>
+        <button class="icon-btn muted" on:click={logout} title="Logout">⏏</button>
       </nav>
     </header>
 
     <!-- ── Body ──────────────────────────────────────────────────────── -->
     <div class="body">
+      <!-- Mobile overlay backdrop -->
+      {#if sidebarOpen}
+        <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+        <div class="sidebar-backdrop" on:click={() => (sidebarOpen = false)}></div>
+      {/if}
+
       <!-- Sidebar -->
-      <aside class="sidebar">
+      <aside class="sidebar" class:open={sidebarOpen}>
         <div class="sidebar-toolbar">
           <span class="sidebar-title">Notes</span>
-          <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">＋</button>
+          <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
+            <!-- Plus -->
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="8" y1="2" x2="8" y2="14"/>
+              <line x1="2" y1="8" x2="14" y2="8"/>
+            </svg>
+          </button>
         </div>
 
         <div class="tree-scroll">
-          <FileTree nodes={$fileTree} on:select={handleSelect} />
+          <FileTree nodes={$fileTree} on:select={handleSelect} on:delete-folder={handleDeleteFolder} />
         </div>
 
         {#if $selectedPath}
           <div class="sidebar-footer">
             <button class="delete-btn" on:click={handleDelete} title="Delete current note">
-              🗑 Delete
+              <!-- Trash -->
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 4h12"/>
+                <path d="M5 4V2h6v2"/>
+                <path d="M3 4l1 10h8l1-10"/>
+                <path d="M6.5 7v4M9.5 7v4"/>
+              </svg>
+              Delete
             </button>
           </div>
         {/if}
@@ -135,7 +199,7 @@
       <!-- Main content -->
       <main class="main">
         {#if $selectedPath}
-          <Editor on:wikilink={handleWikiLink} />
+          <Editor file={$selectedFile} on:wikilink={handleWikiLink} />
         {:else}
           <div class="empty-state">
             <p class="empty-title">#ash</p>
@@ -153,13 +217,13 @@
 <style>
   /* ── CSS variables (dark default + light override) ───────────────────── */
   :global(:root) {
-    --color-bg:         #0f1117;
-    --color-surface:    #1a1d27;
-    --color-border:     #2a2d3d;
+    --color-bg:         #000000;
+    --color-surface:    #0d0d0d;
+    --color-border:     #1f1f1f;
     --color-text:       #e2e4ed;
-    --color-text-muted: #8b8fa8;
-    --color-accent:     #6366f1;
-    --color-accent-dim: #6366f144;
+    --color-text-muted: #6b6e85;
+    --color-accent:     #aaff00;
+    --color-accent-dim: #aaff0044;
   }
 
   :global([data-theme="light"]) {
@@ -168,7 +232,7 @@
     --color-border:     #dde0f0;
     --color-text:       #1a1d2e;
     --color-text-muted: #6b6e85;
-    --color-accent-dim: #6366f122;
+    --color-accent-dim: #aaff0033;
   }
 
   @media (prefers-color-scheme: light) {
@@ -178,7 +242,7 @@
       --color-border:     #dde0f0;
       --color-text:       #1a1d2e;
       --color-text-muted: #6b6e85;
-      --color-accent-dim: #6366f122;
+      --color-accent-dim: #aaff0033;
     }
   }
 
@@ -367,5 +431,50 @@
     cursor: pointer;
     padding: 0;
     text-decoration: underline;
+  }
+
+  /* ── Hamburger (hidden on desktop) ───────────────────────────────────── */
+  .menu-btn { display: none; }
+
+  /* ── Responsive ──────────────────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    .menu-btn { display: flex; }
+
+    .sidebar {
+      position: fixed;
+      top: 48px;
+      left: 0;
+      bottom: 0;
+      z-index: 200;
+      width: 280px;
+      transform: translateX(-100%);
+      transition: transform 0.22s ease;
+      box-shadow: 4px 0 32px rgba(0, 0, 0, 0.6);
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    .sidebar-backdrop {
+      position: fixed;
+      inset: 48px 0 0 0;
+      z-index: 199;
+      background: rgba(0, 0, 0, 0.55);
+    }
+
+    /* Full-width main on mobile */
+    .body {
+      overflow: auto;
+    }
+
+    header {
+      gap: 0.5rem;
+      padding: 0 0.6rem;
+    }
+
+    .empty-hint {
+      display: none;
+    }
   }
 </style>

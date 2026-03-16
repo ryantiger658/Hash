@@ -3,7 +3,9 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **Draft v0.4** — requirements complete; ready to scaffold
+> Status: **v0.5** — M0 and M1 complete; M2 (Sync Protocol) is next
+
+---
 
 ## Overview
 
@@ -37,19 +39,19 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 +-------------------+
 |   Docker Server   |
 |                   |
-|  - REST / WebSocket API
-|  - Web UI (read + edit markdown)
-|  - Sync engine (server-side)
+|  - REST API       |
+|  - Web UI         |
+|  - Sync engine    |
 |  - Auth layer     |
 +-------------------+
         |
-        | (network / local)
+        | (HTTP over network)
         v
 +-------------------+
 |  Desktop Client   |
 |                   |
 |  - Sync agent     |
-|  - (optional) Markdown viewer/editor
+|  - Markdown editor|
 |  - Offline cache  |
 +-------------------+
 ```
@@ -60,38 +62,49 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 
 ### Deployment
 
-- Distributed as a single Docker image
+- Distributed as a single Docker image (`ghcr.io/ryantiger658/hash`)
 - Managed via Portainer (standard Docker Compose compatible)
-- Document storage via mounted SMB share (or any POSIX-compatible volume)
-- Configurable via environment variables and/or a config file
+- Document storage via mounted volume (SMB share or any POSIX-compatible path)
+- Configurable via environment variables **or** a `config.toml` file (env vars take precedence when no config file is present)
+- Docker named volume seeds welcome content on first run
+- Chainguard base images (near-zero CVE)
 
-### Web Interface
+### Web Interface ✅ M1
 
 - Browse the document repository (folder tree + file list)
 - Read markdown with rendered preview
-- Edit markdown (in-browser editor with live preview)
+- Edit markdown (split editor: textarea + live preview)
+- Edit / Split / Preview mode toggle (icon buttons; text labels opt-in via `editor_labels` config)
 - Create, rename, and delete files and folders
-- Search across all documents (full-text)
-- Responsive design (usable on mobile/tablet)
+- Full-text search across all `.md` files (case-insensitive, returns path + snippet + line number)
+- Auto-save (1.5s debounce after last keystroke); `⌘S` manual save
+- New note modal supporting nested paths (`folder/note.md`)
+- Light / dark / system theme; accent color configurable server-side
+- Default accent color: chartreuse (`#aaff00`)
+- Wiki-links: `[[Note Name]]` and `[[Note|Label]]`
+- Daily journal: auto-opens `journal/YYYY/Mon/MM-DD-YYYY.md` on login; created if missing; auto-deleted if navigated away from while still empty
+- File metadata footer (created date, last updated) rendered below each note
+- Login gate (API key); key stored in browser `localStorage`
 
-### Sync API
+### Sync API ✅ M1 (foundation)
 
-- Expose a sync protocol over HTTP/WebSocket for desktop clients
-- Support delta sync (only transfer changed content)
-- Track document versions to detect and handle conflicts
-- Support multiple connected clients simultaneously
+- `GET /api/sync/snapshot` — returns full file list with checksums and timestamps
+- `POST /api/sync/push` — accepts upserts (base64 content) and deletes; reports rejections
+- Delta sync fields (`modified`, `checksum`) in place; full protocol deferred to M2
 
 ### Security
 
-- API key authentication (configured in `config.toml` or via env var)
-- HTTPS recommended via reverse proxy (e.g., Traefik, nginx); built-in TLS optional future addition
-- Future: username/password login, OIDC/SSO support
+- Bearer token auth on all protected routes; public route for UI config (`/api/ui-config`)
+- API key configured via `config.toml` or `HASH_API_KEY` env var
+- Path traversal protection (vault root canonicalization + normalize)
+- HTTPS recommended via reverse proxy (Traefik, nginx); built-in TLS deferred
+- CVE scanning with Grype in CI; Chainguard images in production
 
 ---
 
 ## Desktop Client Requirements
 
-### Core (Required)
+### Core (M3)
 
 - Sync markdown folders with the server
 - Operate fully offline; queue changes locally
@@ -100,11 +113,26 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - Cross-platform: macOS, Windows, Linux
 - Lightweight: minimal resource footprint, runs in system tray
 
-### Editor (Stretch Goal)
+### Editor (M4 — Stretch Goal)
 
 - View rendered markdown offline
 - Edit markdown with live preview
 - Keyboard-friendly interface
+
+---
+
+## Configuration
+
+| Field | Env var | Default | Notes |
+|---|---|---|---|
+| `server.host` | `HASH_HOST` | `0.0.0.0` | |
+| `server.port` | `HASH_PORT` | `3535` | |
+| `vault.path` | `HASH_VAULT_PATH` | *(required)* | |
+| `vault.poll_interval_secs` | `HASH_POLL_INTERVAL` | `30` | |
+| `auth.api_key` | `HASH_API_KEY` | *(required)* | |
+| `ui.secondary_color` | `HASH_SECONDARY_COLOR` | `#aaff00` | Any CSS hex color |
+| `ui.default_theme` | `HASH_DEFAULT_THEME` | `system` | `light`, `dark`, `system` |
+| `ui.editor_labels` | `HASH_EDITOR_LABELS` | `false` | `true` to show Edit/Split/Preview text |
 
 ---
 
@@ -125,64 +153,87 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 
 | Concern | Decision | Rationale |
 |---|---|---|
-| Server language | Rust | Small Docker image, high performance, shared ecosystem with desktop |
-| Desktop framework | Tauri (Rust + WebView) | Lightweight native app; avoids bundling a browser engine like Electron |
-| Frontend (web + desktop) | Svelte | Compiles to plain JS, minimal runtime, shared between server web UI and Tauri shell |
+| Server language | Rust | Small Docker image, high performance |
+| Desktop framework | Tauri v2 (Rust + WebView) | Lightweight; avoids bundling a browser engine |
+| Frontend (web + desktop) | Svelte | Minimal runtime; shared between server web UI and Tauri shell |
 | Desktop platforms | macOS, Windows, Linux | Tauri supports all three natively |
-| Mobile (future) | Android | Tauri v2 supports Android; deferred to a later milestone |
+| Mobile (future) | Android | Tauri v2 supports Android; deferred |
 | User model | Single-user | No multi-tenancy needed |
-| Conflict resolution | Last-write-wins | Simple; no collaborative editing required |
-| Sync style | Auto-save + auto-sync | Changes saved locally and pushed to server automatically |
-| Sync protocol | REST-based delta (timestamp + checksum) | Simple to implement and debug; no CRDT complexity needed |
-| Storage | Fully file-based (no database) | Transparent, inspectable, trivially backupable |
-| Config format | TOML | Human-readable, simple, used for both server and client config |
-| Sync metadata | `.mdkb/sync/<file>.toml` per tracked file | Stores checksum, modified time, last synced time alongside documents |
-| Search index | In-memory, rebuilt on startup | No persistence needed; scanning a markdown vault is fast |
-| Authentication | Single API key (in `config.toml`) | Simple for v1; auth options (username/password, OIDC) deferred |
-| Default port | 3535 | ASCII 35 = `#`, the markdown heading character |
-| SMB file watching | Polling every 30s (configurable) | inotify is unreliable over SMB |
+| Conflict resolution | Last-write-wins | Simple; no collaborative editing |
+| Sync protocol | REST delta (timestamp + checksum) | Simple to implement; no CRDT complexity |
+| Storage | File-based (no database) | Transparent, inspectable, trivially backupable |
+| Config format | TOML + env var fallback | Human-readable; env vars enable Docker-native deployment |
+| Sync metadata | `.mdkb/sync/<file>.toml` | Per-file tracking alongside documents |
+| Search index | In-memory, rebuilt on startup | No persistence needed; markdown vaults are small |
+| Authentication | Single API key | Simple for v1 homelab use |
+| Default port | 3535 | ASCII 35 = `#`; 3535 = `##` |
+| SMB file watching | 30s polling | inotify unreliable over SMB |
+| Docker base image | Chainguard glibc-dynamic | Near-zero CVE distroless runtime |
+| Container registry | GitHub Container Registry (ghcr.io) | Free for public repos; built into CI |
 
 ---
 
 ## Markdown Support
 
 - **Flavor:** CommonMark + GitHub Flavored Markdown (GFM)
-  - Tables, task lists, strikethrough, fenced code blocks with syntax highlighting
-- **Wiki-links:** `[[Note Name]]` for inter-note linking; resolves by filename, then by frontmatter `title`; ambiguous matches surface a picker
-- **YAML frontmatter:** supported but optional; recommended fields: `title`, `tags`, `created`, `updated`
-- **Attachments (future):** images and binary files linked from markdown; synced alongside their parent notes
+  - Tables, task lists, strikethrough, fenced code blocks
+- **Wiki-links:** `[[Note Name]]` and `[[Note|Label]]` — resolves by filename, then frontmatter `title`
+- **YAML frontmatter:** supported; recommended fields: `title`, `tags`, `created`, `updated`
+- **Attachments (future):** images synced alongside parent notes
 
 ## Document Organization
 
-No enforced structure. Recommended conventions (documented, not required):
+No enforced structure. Defaults seeded on first Docker run:
 
 ```
 vault/
-  assets/        # images and file attachments
-  .mdkb/         # tool metadata — not user content, not synced to clients
-    sync/        # per-file sync state TOML files
-  **/*.md        # notes anywhere in the tree
+  Welcome.md
+  Getting-Started.md
+  journal/
+    YYYY/
+      Mon/              # Jan, Feb, Mar …
+        MM-DD-YYYY.md   # daily journal entries (auto-created on login)
+  assets/
+  .mdkb/                # tool metadata — not synced to clients
+    sync/
 ```
+
+---
+
+## Milestones
+
+| Milestone | Scope | Status |
+|---|---|---|
+| M0 — Foundations | Repo setup, Docker scaffold, basic API | ✅ Complete |
+| M1 — Web UI | Read/edit markdown, folder tree, search, journal, Docker | ✅ Complete |
+| M2 — Sync Protocol | Delta sync, version tracking, conflict detection | 🔲 Next |
+| M3 — Desktop Client (Sync) | Background sync agent, offline queue, auto-reconnect | 🔲 Planned |
+| M4 — Desktop Client (Editor) | Offline viewer + editor | 🔲 Planned |
+
+---
+
+## Feature Backlog (Post-v1)
+
+Requests collected from early users — not yet scheduled for implementation:
+
+| Feature | Notes |
+|---|---|
+| Full theming | Custom color schemes beyond accent color; CSS variable overrides; theme gallery |
+| MermaidJS diagrams | Render `mermaid` fenced code blocks as flowcharts, sequence diagrams, etc. |
+| Obsidian vault compatibility | Import and correctly render vaults created by Obsidian (attachments, properties, callouts) |
+| MARP slide decks | Render MARP-formatted markdown as presentation slides in-browser |
+
+---
 
 ## Resolved Decisions
 
 | Question | Decision |
 |---|---|
-| API key setup UX | Env var + `config.toml`; generated with a placeholder on first run. No wizard needed for v1. |
-| Desktop sync scope (v1) | Full vault sync only; folder selection deferred. |
-| Attachment sync | Auto-include linked attachments when syncing a note. |
-
----
-
-## Milestones (Proposed)
-
-| Milestone | Scope |
-|---|---|
-| M0 — Foundations | Repo setup, Docker scaffold, SMB mount, basic file browsing API |
-| M1 — Web UI | Read + edit markdown in browser, folder tree, search |
-| M2 — Sync Protocol | Delta sync API, version tracking, conflict detection |
-| M3 — Desktop Client (Sync) | Background sync agent, offline queue, auto-reconnect |
-| M4 — Desktop Client (Editor) | Offline viewer + editor (stretch goal) |
+| API key setup UX | Env var + `config.toml`; env vars sufficient for Docker with no config file |
+| Desktop sync scope (v1) | Full vault sync only; folder selection deferred |
+| Attachment sync | Auto-include linked attachments when syncing a note |
+| Journal path format | `journal/YYYY/Mon/MM-DD-YYYY.md` |
+| Empty journal cleanup | Auto-deleted when navigating away if content is only the heading |
 
 ---
 
@@ -191,6 +242,7 @@ vault/
 | Version | Date | Notes |
 |---|---|---|
 | 0.1 | 2026-03-15 | Initial draft |
-| 0.2 | 2026-03-15 | Tech stack decided; open questions narrowed |
-| 0.3 | 2026-03-15 | Resolved storage, auth, port, markdown flavor, doc organization |
-| 0.4 | 2026-03-15 | Closed all open questions; added AGENTS.md |
+| 0.2 | 2026-03-15 | Tech stack decided |
+| 0.3 | 2026-03-15 | Storage, auth, port, markdown flavor resolved |
+| 0.4 | 2026-03-15 | All open questions closed; AGENTS.md added |
+| 0.5 | 2026-03-15 | M0 and M1 complete; feature backlog added |

@@ -1,6 +1,17 @@
 # #ash Server Configuration
 # Copy this file to config.toml and edit before running.
 # config.toml is gitignored to prevent leaking the API key.
+#
+# Alternatively, all values can be supplied via environment variables —
+# no config file is required when running in Docker:
+#
+#   HASH_API_KEY          (required)
+#   HASH_VAULT_PATH       (required)
+#   HASH_HOST             (default: 0.0.0.0)
+#   HASH_PORT             (default: 3535)
+#   HASH_POLL_INTERVAL    (default: 30)
+#   HASH_SECONDARY_COLOR  (default: #6366f1)
+#   HASH_DEFAULT_THEME    (default: system)
 
 [server]
 # Address to bind the HTTP server to.
@@ -22,11 +33,16 @@ poll_interval_secs = 30
 [ui]
 # Accent color applied throughout the web and desktop UI. Any valid CSS hex color.
 # Can also be set via the HASH_SECONDARY_COLOR environment variable.
-secondary_color = "#6366f1"
+secondary_color = "#aaff00"
 
 # Default theme for new users. Options: "light", "dark", "system"
 # Users can override this in the UI; their preference is stored in the browser.
 default_theme = "system"
+
+# Show text labels on the editor mode buttons (Edit / Split / Preview).
+# Defaults to false (icon-only). Set to true to restore text labels.
+# Can also be set via HASH_EDITOR_LABELS=true environment variable.
+editor_labels = false
 
 [auth]
 # API key for authenticating desktop clients and web UI requests.

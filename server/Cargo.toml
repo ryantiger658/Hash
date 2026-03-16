@@ -1,6 +1,6 @@
 [package]
 name = "hash-server"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "#ash server — self-hosted markdown knowledge base"
 

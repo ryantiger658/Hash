@@ -25,7 +25,7 @@ Use the file tree on the left to browse your vault. Click any note to open it.
 
 ## Next steps
 
-→ Read [[Getting Started]] for a walkthrough of the key features.
+→ Read [[Getting-Started]] for a walkthrough of the key features.
 
 ---
 

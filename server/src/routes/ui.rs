@@ -11,6 +11,7 @@ pub async fn get_ui_config(State(state): State<Arc<AppState>>) -> impl IntoRespo
     Json(UiConfigResponse {
         secondary_color: state.config.ui.secondary_color.clone(),
         default_theme: state.config.ui.default_theme.clone(),
+        editor_labels: state.config.ui.editor_labels,
     })
 }
 
@@ -18,4 +19,5 @@ pub async fn get_ui_config(State(state): State<Arc<AppState>>) -> impl IntoRespo
 pub struct UiConfigResponse {
     pub secondary_color: String,
     pub default_theme: String,
+    pub editor_labels: bool,
 }
