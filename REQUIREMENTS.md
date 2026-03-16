@@ -222,6 +222,8 @@ Requests collected from early users — not yet scheduled for implementation:
 | MermaidJS diagrams | Render `mermaid` fenced code blocks as flowcharts, sequence diagrams, etc. |
 | Obsidian vault compatibility | Import and correctly render vaults created by Obsidian (attachments, properties, callouts) |
 | MARP slide decks | Render MARP-formatted markdown as presentation slides in-browser |
+| Focus mode | Distraction-free writing view: hide sidebar, toolbar, and chrome; toggled via keyboard shortcut |
+| Configure page | In-app UI to edit `config.toml` fields (accent color, theme, vault path, API key rotation) with field descriptions and live preview |
 
 ---
 

@@ -145,8 +145,8 @@
             </svg>
           {:else if currentTheme === 'dark'}
             <!-- Moon -->
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M13 10A6 6 0 016 3a6 6 0 100 10 6 6 0 007-3z"/>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
             </svg>
           {:else}
             <!-- Monitor -->
