@@ -1,0 +1,35 @@
+# #ash Server Configuration
+# Copy this file to config.toml and edit before running.
+# config.toml is gitignored to prevent leaking the API key.
+
+[server]
+# Address to bind the HTTP server to.
+# Use 0.0.0.0 to accept connections from other machines (required in Docker).
+host = "0.0.0.0"
+
+# Default port. 3535 = "##" in ASCII (# is character 35).
+port = 3535
+
+[vault]
+# Absolute path to the markdown vault directory.
+# In Docker, mount your SMB share here.
+path = "/vault"
+
+# How often to poll the vault directory for changes (in seconds).
+# inotify is unreliable over SMB, so polling is used instead.
+poll_interval_secs = 30
+
+[ui]
+# Accent color applied throughout the web and desktop UI. Any valid CSS hex color.
+# Can also be set via the HASH_SECONDARY_COLOR environment variable.
+secondary_color = "#6366f1"
+
+# Default theme for new users. Options: "light", "dark", "system"
+# Users can override this in the UI; their preference is stored in the browser.
+default_theme = "system"
+
+[auth]
+# API key for authenticating desktop clients and web UI requests.
+# Generate a strong random value before deploying, e.g.:
+#   openssl rand -hex 32
+api_key = "change-me-before-deploying"

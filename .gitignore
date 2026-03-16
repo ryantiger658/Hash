@@ -1,0 +1,38 @@
+# Rust
+target/
+Cargo.lock
+
+# Node
+node_modules/
+.env
+.env.*
+
+# Build output
+dist/
+build/
+
+# Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/WixTools/
+*.app
+*.dmg
+*.deb
+*.rpm
+*.msi
+*.exe
+
+# Config with secrets
+config.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# #ash vault metadata (not committed — lives on the mounted volume)
+.mdkb/

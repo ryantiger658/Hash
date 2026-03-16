@@ -1,0 +1,20 @@
+services:
+  hash:
+    image: hashash:latest
+    # Or build locally:
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
+    container_name: hash
+    restart: unless-stopped
+    ports:
+      - "3535:3535"
+    volumes:
+      # Your config file (copy from server/config.example.toml and edit)
+      - ./config.toml:/app/config.toml:ro
+      # Your SMB share or local vault directory
+      - /mnt/your-smb-share:/vault
+    environment:
+      - HASH_CONFIG=/app/config.toml
+      # Override log level if needed: RUST_LOG=debug
+      - RUST_LOG=hash_server=info

@@ -1,0 +1,5 @@
+[workspace]
+# The server is part of this workspace.
+# desktop/src-tauri is intentionally excluded — Tauri requires its own isolated workspace.
+members = ["server"]
+resolver = "2"
