@@ -1,3 +1,4 @@
+import 'hack-font/build/web/hack.css'
 import { initTheme } from './lib/theme.js'
 import App from './App.svelte'
 

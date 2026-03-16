@@ -223,7 +223,12 @@ Requests collected from early users — not yet scheduled for implementation:
 | Obsidian vault compatibility | Import and correctly render vaults created by Obsidian (attachments, properties, callouts) |
 | MARP slide decks | Render MARP-formatted markdown as presentation slides in-browser |
 | Focus mode | Distraction-free writing view: hide sidebar, toolbar, and chrome; toggled via keyboard shortcut |
+| Auto-continue lists | When pressing Enter inside a list item, automatically insert the next list marker (`-`, `1.`, `- [ ]`) |
+| Version update notification | Check for new releases and show a badge/prompt when a newer version is available |
 | Configure page | In-app UI to edit `config.toml` fields (accent color, theme, vault path, API key rotation) with field descriptions and live preview |
+| Tagging | Tag notes via YAML frontmatter or inline `#tag` syntax; tags stored alongside date metadata in the footer; filter/browse by tag |
+| Hack font for editor | Use [Hack](https://github.com/source-foundry/Hack) monospace font in the raw markdown editor pane |
+| Jump to today's journal | One-click button (sidebar or toolbar) to open or create today's journal entry |
 
 ---
 

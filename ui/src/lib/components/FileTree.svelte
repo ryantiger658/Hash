@@ -67,7 +67,7 @@
           <svelte:self nodes={node.children} depth={depth + 1} on:select={bubble} on:delete-folder={bubbleDelete} on:delete-file={bubbleDeleteFile} />
         {/if}
       {:else}
-        <div class="file-row-wrap">
+        <div class="file-row-wrap" class:active={$selectedPath === node.path}>
           <button
             class="tree-row file"
             class:active={$selectedPath === node.path}
@@ -188,7 +188,15 @@
     background: transparent;
     color: var(--color-accent);
     font-weight: 500;
+  }
+
+  .file-row-wrap.active {
     box-shadow: inset 0 0 0 1.5px var(--color-accent);
+    border-radius: 5px;
+  }
+
+  .file-row-wrap.active .file-delete {
+    display: flex;
   }
 
   .arrow {

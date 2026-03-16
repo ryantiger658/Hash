@@ -12,13 +12,26 @@
   // ── Scroll sync (split mode) ──────────────────────────────────────────────
   let rawEl
   let previewEl
+  let syncing = false
 
   function onRawScroll() {
-    if (mode !== 'split' || !previewEl || !rawEl) return
+    if (mode !== 'split' || !previewEl || !rawEl || syncing) return
+    syncing = true
     const pct = rawEl.scrollTop / (rawEl.scrollHeight - rawEl.clientHeight)
     if (isFinite(pct)) {
       previewEl.scrollTop = pct * (previewEl.scrollHeight - previewEl.clientHeight)
     }
+    requestAnimationFrame(() => { syncing = false })
+  }
+
+  function onPreviewScroll() {
+    if (mode !== 'split' || !previewEl || !rawEl || syncing) return
+    syncing = true
+    const pct = previewEl.scrollTop / (previewEl.scrollHeight - previewEl.clientHeight)
+    if (isFinite(pct)) {
+      rawEl.scrollTop = pct * (rawEl.scrollHeight - rawEl.clientHeight)
+    }
+    requestAnimationFrame(() => { syncing = false })
   }
 
   function onInput(e) {
@@ -54,7 +67,7 @@
   const saveLabels = {
     idle: '',
     saving: 'Saving…',
-    saved: 'Saved ✓',
+    saved: '✓ Saved',
     error: 'Save failed',
   }
 </script>
@@ -106,7 +119,7 @@
     {/if}
 
     {#if mode === 'preview' || mode === 'split'}
-      <div class="preview" class:full={mode === 'preview'} bind:this={previewEl}>
+      <div class="preview" class:full={mode === 'preview'} bind:this={previewEl} on:scroll={onPreviewScroll}>
         <Viewer content={$fileContent} {file} on:wikilink={onWikiLink} on:checkbox-toggle={onCheckboxToggle} />
       </div>
     {/if}
@@ -191,7 +204,7 @@
     border: none;
     background: var(--color-bg);
     color: var(--color-text);
-    font-family: ui-monospace, 'Cascadia Code', monospace;
+    font-family: 'Hack', ui-monospace, 'Cascadia Code', monospace;
     font-size: 0.9rem;
     line-height: 1.7;
     resize: none;

@@ -92,4 +92,4 @@ npm run tauri dev
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE) — if you run a modified version as a network service, you must publish your changes.

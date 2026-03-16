@@ -3,7 +3,7 @@
   import { loadServerTheme, setTheme, getStoredTheme } from './lib/theme.js'
   import { hasApiKey, clearApiKey } from './lib/api.js'
   import {
-    fileTree, files, selectedPath, selectedFile, fileContent, isDirty,
+    fileTree, files, selectedPath, selectedFile, fileContent,
     loadVault, selectFile, createFile, deleteFile, deleteFolder,
     saveCurrentFile, openTodayJournal,
   } from './stores/vault.js'
@@ -116,7 +116,8 @@
   <div class="app">
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <header>
-      <button class="icon-btn menu-btn" class:visible={sidebarCollapsed} on:click={toggleMenu} title="Toggle sidebar">
+      <!-- Hamburger: mobile only -->
+      <button class="icon-btn menu-btn" on:click={toggleMenu} title="Menu">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <line x1="2" y1="4" x2="14" y2="4"/>
           <line x1="2" y1="8" x2="14" y2="8"/>
@@ -132,8 +133,8 @@
         <button class="icon-btn theme-btn" on:click={cycleTheme} title="Theme: {currentTheme}">
           {#if currentTheme === 'light'}
             <!-- Sun -->
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="8" cy="8" r="3"/>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8" cy="8" r="2.5"/>
               <line x1="8" y1="1" x2="8" y2="3"/>
               <line x1="8" y1="13" x2="8" y2="15"/>
               <line x1="1" y1="8" x2="3" y2="8"/>
@@ -144,13 +145,13 @@
               <line x1="4.46" y1="11.54" x2="3.05" y2="12.95"/>
             </svg>
           {:else if currentTheme === 'dark'}
-            <!-- Moon -->
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+            <!-- Moon — filled crescent -->
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" stroke="none">
+              <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
             </svg>
           {:else}
             <!-- Monitor -->
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="1" y="2" width="14" height="10" rx="1.5"/>
               <line x1="5" y1="14" x2="11" y2="14"/>
               <line x1="8" y1="12" x2="8" y2="14"/>
@@ -169,25 +170,37 @@
         <div class="sidebar-backdrop" on:click={() => (sidebarOpen = false)}></div>
       {/if}
 
+      <!-- Floating expand button: desktop only, when sidebar is collapsed -->
+      {#if sidebarCollapsed}
+        <button class="sidebar-expand-float" on:click={() => (sidebarCollapsed = false)} title="Expand sidebar">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6,3 11,8 6,13"/>
+          </svg>
+        </button>
+      {/if}
+
       <!-- Sidebar -->
       <aside class="sidebar" class:open={sidebarOpen} class:collapsed={sidebarCollapsed}>
         <div class="sidebar-toolbar">
-          <span class="sidebar-title">Notes</span>
-          <div class="sidebar-toolbar-actions">
+          <button class="collapse-btn" on:click={() => (sidebarCollapsed = !sidebarCollapsed)} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            {#if sidebarCollapsed}
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6,3 11,8 6,13"/>
+              </svg>
+            {:else}
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="10,3 5,8 10,13"/>
+              </svg>
+            {/if}
+          </button>
+          {#if !sidebarCollapsed}
             <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
-              <!-- Plus -->
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="8" y1="2" x2="8" y2="14"/>
                 <line x1="2" y1="8" x2="14" y2="8"/>
               </svg>
             </button>
-            <button class="collapse-btn" on:click={() => (sidebarCollapsed = true)} title="Collapse sidebar">
-              <!-- Chevron left -->
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="10,3 5,8 10,13"/>
-              </svg>
-            </button>
-          </div>
+          {/if}
         </div>
 
         <div class="tree-scroll">
@@ -195,13 +208,19 @@
         </div>
 
         <div class="sidebar-footer">
+          <span class="app-version">v{version}</span>
           <a href="https://github.com/ryantiger658/Hash" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link" title="View on GitHub">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
             </svg>
-            GitHub
           </a>
-          <span class="app-version">v{version}</span>
+          <a href="https://buymeacoffee.com/noyuguti" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link" title="Buy me a coffee">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3h8l-1 7H4L3 3z"/>
+              <path d="M11 5h1.5a1.5 1.5 0 0 1 0 3H11"/>
+              <line x1="5" y1="13" x2="9" y2="13"/>
+            </svg>
+          </a>
         </div>
       </aside>
 
@@ -301,6 +320,30 @@
     display: flex;
     flex: 1;
     overflow: hidden;
+    position: relative;
+  }
+
+  .sidebar-expand-float {
+    display: none; /* mobile: hidden */
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 5;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .sidebar-expand-float:hover {
+    background: var(--color-border);
+    color: var(--color-text);
   }
 
   /* ── Sidebar ─────────────────────────────────────────────────────────── */
@@ -320,20 +363,6 @@
     justify-content: space-between;
     padding: 0.5rem 0.75rem 0.35rem;
     flex-shrink: 0;
-  }
-
-  .sidebar-title {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-muted);
-  }
-
-  .sidebar-toolbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
   }
 
   .collapse-btn {
@@ -366,7 +395,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 0.5rem;
   }
 
@@ -482,20 +511,22 @@
     text-decoration: underline;
   }
 
-  /* ── Hamburger: hidden on desktop by default; visible when collapsed ──── */
+  /* ── Hamburger: mobile only ──────────────────────────────────────────── */
   .menu-btn { display: none; }
-  .menu-btn.visible { display: inline-flex; }
 
   /* ── Desktop only ────────────────────────────────────────────────────── */
   @media (min-width: 641px) {
     .collapse-btn { display: inline-flex; }
 
+    /* Collapsed: fully hidden */
     .sidebar.collapsed {
       width: 0;
       min-width: 0;
       overflow: hidden;
       border-right: none;
     }
+
+    .sidebar-expand-float { display: inline-flex; }
   }
 
   /* ── Responsive ──────────────────────────────────────────────────────── */

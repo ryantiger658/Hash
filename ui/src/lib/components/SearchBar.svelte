@@ -51,7 +51,6 @@
       type="search"
       bind:value={query}
       on:input={onInput}
-      placeholder="Search notes…"
     />
     {#if query}
       <button class="clear" on:click={clear} aria-label="Clear">✕</button>
