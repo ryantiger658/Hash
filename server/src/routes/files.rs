@@ -11,14 +11,10 @@ use std::sync::Arc;
 pub async fn list_files(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    state
-        .vault
-        .list_files()
-        .map(Json)
-        .map_err(|e| {
-            tracing::error!("list_files error: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
+    state.vault.list_files().map(Json).map_err(|e| {
+        tracing::error!("list_files error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
 }
 
 /// GET /api/files/*path — download a single file's raw contents.
