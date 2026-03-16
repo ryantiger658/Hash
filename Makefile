@@ -52,6 +52,9 @@ help:
 	@echo "    docker-down      Stop docker-compose"
 	@echo "    docker-logs      Tail docker-compose logs"
 	@echo ""
+	@echo "  Security"
+	@echo "    scan             Scan Docker image for CVEs with Grype"
+	@echo ""
 	@echo "  Housekeeping"
 	@echo "    clean            Remove all build artifacts"
 	@echo "    clean-server     Remove server build artifacts"
@@ -71,9 +74,9 @@ setup: install dev-config
 dev-config:
 	@if [ ! -f $(DEV_CONFIG) ]; then \
 		cp server/config.example.toml $(DEV_CONFIG); \
-		echo "  Created $(DEV_CONFIG) from example — edit it before running."; \
 		sed -i.bak 's|path = "/vault"|path = "$(PWD)/$(DEV_VAULT)"|g' $(DEV_CONFIG) && rm -f $(DEV_CONFIG).bak; \
-		echo "  Vault path auto-set to $(PWD)/$(DEV_VAULT)"; \
+		echo "  Created $(DEV_CONFIG) — vault set to $(PWD)/$(DEV_VAULT)"; \
+		echo "  Edit $(DEV_CONFIG) and set a real api_key before running."; \
 	else \
 		echo "  $(DEV_CONFIG) already exists — skipping."; \
 	fi
@@ -175,6 +178,13 @@ docker-down:
 .PHONY: docker-logs
 docker-logs:
 	docker compose -f docker/docker-compose.yml logs -f
+
+
+# ── Security ──────────────────────────────────────────────────────────────────
+.PHONY: scan
+scan: build-docker
+	@which grype > /dev/null 2>&1 || brew install anchore/grype/grype
+	grype hashash:latest
 
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────

@@ -4,10 +4,18 @@ version = "0.1.0"
 edition = "2021"
 description = "#ash server — self-hosted markdown knowledge base"
 
+[[bin]]
+name = "hash-server"
+path = "src/main.rs"
+
+[lib]
+name = "hash_server"
+path = "src/lib.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["multipart"] }
-tower = "0.4"
+tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 
 # Async runtime
@@ -37,3 +45,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+http-body-util = "0.1"

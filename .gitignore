@@ -1,6 +1,6 @@
 # Rust
 target/
-Cargo.lock
+# Cargo.lock is committed for binary crates (reproducible builds)
 
 # Node
 node_modules/
@@ -10,6 +10,7 @@ node_modules/
 # Build output
 dist/
 build/
+server/static/
 
 # Tauri
 desktop/src-tauri/target/
@@ -25,9 +26,8 @@ desktop/src-tauri/WixTools/
 config.toml
 dev/config.toml
 
-# Dev vault contents (keep the directory, ignore everything inside)
-dev/vault/*
-!dev/vault/.gitkeep
+# Dev vault — tracked files are the default getting-started content.
+# Add your own notes freely; git will only track what you explicitly add.
 
 # OS
 .DS_Store

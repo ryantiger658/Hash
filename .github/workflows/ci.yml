@@ -120,6 +120,49 @@ jobs:
           cache-to: type=gha,mode=max
 
 
+  # ── Security: Grype vulnerability scan on Docker image ───────────────────
+  security-scan:
+    name: Security scan (Grype)
+    runs-on: ubuntu-latest
+    needs: [server-lint-test, ui-build]
+    permissions:
+      security-events: write   # upload SARIF to GitHub Security tab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the image locally so Grype can scan it — no push needed
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          load: true
+          tags: hashash:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image with Grype
+        uses: anchore/scan-action@v4
+        id: grype
+        with:
+          image: "hashash:scan"
+          fail-build: true
+          severity-cutoff: high       # fail on HIGH or CRITICAL
+          output-format: sarif
+          output-file: grype.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()                  # upload even if Grype found issues
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: grype.sarif
+
+
   # ── Desktop: build Tauri app (matrix: Linux / macOS / Windows) ────────────
   desktop-build:
     name: Desktop (${{ matrix.platform }})

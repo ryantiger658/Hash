@@ -85,9 +85,9 @@ impl Vault {
     /// Resolve a vault-relative path to a full filesystem path.
     /// Rejects any path that escapes the vault root (path traversal protection).
     pub fn full_path(&self, rel_path: &str) -> Result<PathBuf> {
-        let joined = self.root.join(rel_path);
         let canonical_root = self.root.canonicalize()?;
-        // Resolve without requiring the file to exist yet
+        // Join against the canonical root so symlinks are resolved before normalization
+        let joined = canonical_root.join(rel_path);
         let resolved = normalize_path(&joined);
         if !resolved.starts_with(&canonical_root) {
             anyhow::bail!("Path traversal attempt: {rel_path}");
@@ -124,4 +124,134 @@ fn normalize_path(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup() -> (Vault, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::new(dir.path().to_str().unwrap());
+        (vault, dir)
+    }
+
+    #[test]
+    fn write_and_read_roundtrip() {
+        let (vault, _dir) = setup();
+        vault.write_file("note.md", b"# Hello").unwrap();
+        let bytes = vault.read_file("note.md").unwrap();
+        assert_eq!(bytes, b"# Hello");
+    }
+
+    #[test]
+    fn write_creates_parent_directories() {
+        let (vault, _dir) = setup();
+        vault.write_file("a/b/c/note.md", b"nested").unwrap();
+        let bytes = vault.read_file("a/b/c/note.md").unwrap();
+        assert_eq!(bytes, b"nested");
+    }
+
+    #[test]
+    fn list_files_returns_written_files() {
+        let (vault, _dir) = setup();
+        vault.write_file("one.md", b"one").unwrap();
+        vault.write_file("two.md", b"two").unwrap();
+        vault.write_file("sub/three.md", b"three").unwrap();
+        let files = vault.list_files().unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"one.md"));
+        assert!(paths.contains(&"two.md"));
+        assert!(paths.contains(&"sub/three.md"));
+    }
+
+    #[test]
+    fn list_files_skips_mdkb_metadata() {
+        let (vault, _dir) = setup();
+        vault.write_file("note.md", b"content").unwrap();
+        vault.write_file(".mdkb/sync/note.toml", b"metadata").unwrap();
+        let files = vault.list_files().unwrap();
+        assert!(files.iter().all(|f| !f.path.starts_with(".mdkb")));
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn delete_removes_file() {
+        let (vault, _dir) = setup();
+        vault.write_file("temp.md", b"delete me").unwrap();
+        assert!(vault.read_file("temp.md").is_ok());
+        vault.delete_file("temp.md").unwrap();
+        assert!(vault.read_file("temp.md").is_err());
+    }
+
+    #[test]
+    fn delete_nonexistent_returns_error() {
+        let (vault, _dir) = setup();
+        assert!(vault.delete_file("ghost.md").is_err());
+    }
+
+    #[test]
+    fn read_nonexistent_returns_error() {
+        let (vault, _dir) = setup();
+        assert!(vault.read_file("missing.md").is_err());
+    }
+
+    #[test]
+    fn file_entry_includes_checksum_and_size() {
+        let (vault, _dir) = setup();
+        vault.write_file("sized.md", b"hello world").unwrap();
+        let files = vault.list_files().unwrap();
+        let entry = files.iter().find(|f| f.path == "sized.md").unwrap();
+        assert_eq!(entry.size, 11);
+        assert!(!entry.checksum.is_empty());
+        assert_eq!(entry.checksum.len(), 64); // SHA-256 hex = 64 chars
+    }
+
+    #[test]
+    fn checksum_is_deterministic() {
+        let (vault, _dir) = setup();
+        vault.write_file("det.md", b"same content").unwrap();
+        let f1 = vault.list_files().unwrap();
+        let c1 = &f1[0].checksum;
+        // Overwrite with identical content
+        vault.write_file("det.md", b"same content").unwrap();
+        let f2 = vault.list_files().unwrap();
+        let c2 = &f2[0].checksum;
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn checksum_differs_for_different_content() {
+        let (vault, _dir) = setup();
+        vault.write_file("change.md", b"version 1").unwrap();
+        let c1 = vault.list_files().unwrap()[0].checksum.clone();
+        vault.write_file("change.md", b"version 2").unwrap();
+        let c2 = vault.list_files().unwrap()[0].checksum.clone();
+        assert_ne!(c1, c2);
+    }
+
+    #[test]
+    fn path_traversal_single_dotdot_blocked() {
+        let (vault, _dir) = setup();
+        let result = vault.full_path("../escape.txt");
+        assert!(result.is_err(), "path traversal should be rejected");
+    }
+
+    #[test]
+    fn path_traversal_deep_blocked() {
+        let (vault, _dir) = setup();
+        let result = vault.full_path("sub/../../etc/passwd");
+        assert!(result.is_err(), "deep path traversal should be rejected");
+    }
+
+    #[test]
+    fn valid_nested_path_allowed() {
+        let (vault, _dir) = setup();
+        // Writing the file first ensures the path resolves correctly
+        vault.write_file("a/b.md", b"ok").unwrap();
+        assert!(vault.full_path("a/b.md").is_ok());
+    }
 }

@@ -9,6 +9,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod auth;
 mod files;
+mod search;
 mod sync;
 mod ui;
 
@@ -25,6 +26,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/files/*path", get(files::get_file))
         .route("/files/*path", put(files::put_file))
         .route("/files/*path", delete(files::delete_file))
+        // Full-text search
+        .route("/search", get(search::search))
         // Sync endpoints (used by desktop clients)
         .route("/sync/snapshot", get(sync::get_snapshot))
         .route("/sync/push", post(sync::push_changes))

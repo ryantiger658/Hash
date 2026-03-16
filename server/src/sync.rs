@@ -11,6 +11,7 @@ pub struct VaultSnapshot {
 
 /// A single file change the client wants to push to the server.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // `modified` will be used in M2 for conflict detection
 pub struct PushItem {
     /// Vault-relative path.
     pub path: String,
