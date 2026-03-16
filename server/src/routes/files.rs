@@ -14,7 +14,7 @@ pub async fn list_files(
     state
         .vault
         .list_files()
-        .map(|files| Json(files))
+        .map(Json)
         .map_err(|e| {
             tracing::error!("list_files error: {e}");
             StatusCode::INTERNAL_SERVER_ERROR

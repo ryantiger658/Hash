@@ -30,10 +30,19 @@
       if (target) dispatch('wikilink', target)
     }
   }
+
+  // Handle checkbox toggles — dispatch event so the editor can patch the source
+  function handleChange(e) {
+    const cb = e.target.closest('input[type="checkbox"][data-cb]')
+    if (cb) {
+      const index = parseInt(cb.dataset.cb, 10)
+      dispatch('checkbox-toggle', { index, checked: cb.checked })
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-<div class="viewer prose" on:click={handleClick}>
+<div class="viewer prose" on:click={handleClick} on:change={handleChange}>
   {@html html}
 
   {#if modifiedStr}
@@ -186,4 +195,47 @@
   .sep {
     opacity: 0.4;
   }
+
+  /* ── Color chip (hex color preview in inline code) ────────────────────── */
+  .viewer :global(.color-chip) {
+    display: inline-block;
+    width: 0.75em;
+    height: 0.75em;
+    border-radius: 2px;
+    margin-right: 0.3em;
+    vertical-align: middle;
+    border: 1px solid rgba(128,128,128,0.3);
+    flex-shrink: 0;
+  }
+
+  /* ── Syntax highlighting (hljs — adapts to light/dark via CSS vars) ───── */
+  .viewer :global(.hljs)                 { color: var(--color-text); }
+  .viewer :global(.hljs-comment),
+  .viewer :global(.hljs-quote)           { color: var(--color-text-muted); font-style: italic; }
+  .viewer :global(.hljs-keyword),
+  .viewer :global(.hljs-selector-tag),
+  .viewer :global(.hljs-subst)           { color: #c792ea; }
+  .viewer :global(.hljs-string),
+  .viewer :global(.hljs-doctag),
+  .viewer :global(.hljs-regexp)          { color: #c3e88d; }
+  .viewer :global(.hljs-number),
+  .viewer :global(.hljs-literal),
+  .viewer :global(.hljs-variable),
+  .viewer :global(.hljs-template-variable),
+  .viewer :global(.hljs-tag .hljs-attr) { color: #f78c6c; }
+  .viewer :global(.hljs-title),
+  .viewer :global(.hljs-section),
+  .viewer :global(.hljs-selector-id),
+  .viewer :global(.hljs-title.class_)   { color: #82aaff; }
+  .viewer :global(.hljs-type),
+  .viewer :global(.hljs-class .hljs-title),
+  .viewer :global(.hljs-built_in)       { color: #ffcb6b; }
+  .viewer :global(.hljs-attr),
+  .viewer :global(.hljs-attribute)      { color: #89ddff; }
+  .viewer :global(.hljs-meta),
+  .viewer :global(.hljs-meta .hljs-keyword) { color: #f07178; }
+  .viewer :global(.hljs-addition)       { color: #c3e88d; background: rgba(195,232,141,0.1); }
+  .viewer :global(.hljs-deletion)       { color: #f07178; background: rgba(240,113,120,0.1); }
+  .viewer :global(.hljs-emphasis)       { font-style: italic; }
+  .viewer :global(.hljs-strong)         { font-weight: bold; }
 </style>

@@ -161,9 +161,10 @@
   }
 
   .tree-row.active {
-    background: var(--color-accent);
-    color: #000;
-    font-weight: 600;
+    background: transparent;
+    color: var(--color-accent);
+    font-weight: 500;
+    box-shadow: inset 0 0 0 1.5px var(--color-accent);
   }
 
   .arrow {

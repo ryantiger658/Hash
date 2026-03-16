@@ -16,8 +16,7 @@ mod ui;
 /// Build the main Axum router with all routes and middleware.
 pub fn build_router(state: Arc<AppState>) -> Router {
     // Public routes — no auth required.
-    let public_api = Router::new()
-        .route("/ui-config", get(ui::get_ui_config));
+    let public_api = Router::new().route("/ui-config", get(ui::get_ui_config));
 
     // Protected routes — API key required.
     let protected_api = Router::new()

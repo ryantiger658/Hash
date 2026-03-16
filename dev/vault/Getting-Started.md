@@ -169,12 +169,15 @@ Then restart the server. Some color ideas:
 
 | Name | Hex |
 |---|---|
-| Indigo (default) | `#6366f1` |
+| Chartreuse (default) | `#aaff00` |
 | Violet | `#7c3aed` |
 | Rose | `#e11d48` |
 | Emerald | `#10b981` |
 | Amber | `#f59e0b` |
 | Sky | `#0ea5e9` |
+| Indigo | `#6366f1` |
+
+> **Tip:** Any hex color in backtick code (`#aaff00`) renders with a color preview chip.
 
 ---
 

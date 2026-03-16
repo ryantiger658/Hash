@@ -99,7 +99,12 @@ async fn body_json(res: axum::response::Response) -> serde_json::Value {
 async fn auth_missing_header_returns_401() {
     let (app, _dir) = make_app();
     let res = app
-        .oneshot(Request::builder().uri("/api/files").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/files")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -257,10 +262,7 @@ async fn put_overwrites_existing_file() {
 #[tokio::test]
 async fn get_nonexistent_file_returns_404() {
     let (app, _dir) = make_app();
-    let res = app
-        .oneshot(auth_get("/api/files/ghost.md"))
-        .await
-        .unwrap();
+    let res = app.oneshot(auth_get("/api/files/ghost.md")).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
@@ -355,17 +357,21 @@ async fn search_finds_content_match() {
     let results = json.as_array().unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["path"], "rust.md");
-    assert!(results[0]["snippet"].as_str().unwrap().contains("Ownership"));
+    assert!(results[0]["snippet"]
+        .as_str()
+        .unwrap()
+        .contains("Ownership"));
 }
 
 #[tokio::test]
 async fn search_is_case_insensitive() {
     let (app, dir) = make_app();
-    std::fs::write(dir.path().join("note.md"), "# Cargo is the Rust package manager").unwrap();
-    let res = app
-        .oneshot(auth_get("/api/search?q=cargo"))
-        .await
-        .unwrap();
+    std::fs::write(
+        dir.path().join("note.md"),
+        "# Cargo is the Rust package manager",
+    )
+    .unwrap();
+    let res = app.oneshot(auth_get("/api/search?q=cargo")).await.unwrap();
     let json = body_json(res).await;
     assert_eq!(json.as_array().unwrap().len(), 1);
 }
@@ -424,10 +430,7 @@ async fn search_skips_non_markdown_files() {
 async fn snapshot_returns_file_list() {
     let (app, dir) = make_app();
     std::fs::write(dir.path().join("snap.md"), "snapshot test").unwrap();
-    let res = app
-        .oneshot(auth_get("/api/sync/snapshot"))
-        .await
-        .unwrap();
+    let res = app.oneshot(auth_get("/api/sync/snapshot")).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let json = body_json(res).await;
     assert!(json["server_time"].is_number());
@@ -461,7 +464,10 @@ async fn push_upserts_file() {
 
     assert_eq!(res.status(), StatusCode::OK);
     let json = body_json(res).await;
-    assert!(json["accepted"].as_array().unwrap().contains(&serde_json::json!("pushed.md")));
+    assert!(json["accepted"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("pushed.md")));
     assert!(dir.path().join("pushed.md").exists());
 }
 

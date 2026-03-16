@@ -9,6 +9,18 @@
 
   const dispatch = createEventDispatcher()
 
+  // ── Scroll sync (split mode) ──────────────────────────────────────────────
+  let rawEl
+  let previewEl
+
+  function onRawScroll() {
+    if (mode !== 'split' || !previewEl || !rawEl) return
+    const pct = rawEl.scrollTop / (rawEl.scrollHeight - rawEl.clientHeight)
+    if (isFinite(pct)) {
+      previewEl.scrollTop = pct * (previewEl.scrollHeight - previewEl.clientHeight)
+    }
+  }
+
   function onInput(e) {
     fileContent.set(e.target.value)
     scheduleAutoSave()
@@ -16,6 +28,27 @@
 
   function onWikiLink(e) {
     dispatch('wikilink', e.detail)
+  }
+
+  // Toggle a task-list checkbox in the raw markdown source
+  function onCheckboxToggle(e) {
+    const { index, checked } = e.detail
+    let count = -1
+    const lines = $fileContent.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*[-*+] \[[ x]\]/.test(lines[i])) {
+        count++
+        if (count === index) {
+          lines[i] = lines[i].replace(
+            /^(\s*[-*+] \[)[ x](\].*)$/,
+            `$1${checked ? 'x' : ' '}$2`
+          )
+          fileContent.set(lines.join('\n'))
+          scheduleAutoSave()
+          break
+        }
+      }
+    }
   }
 
   const saveLabels = {
@@ -28,6 +61,9 @@
 
 <div class="editor-wrap">
   <div class="toolbar">
+    <span class="save-status" class:dirty={$isDirty} class:error={$saveStatus === 'error'}>
+      {$isDirty && $saveStatus === 'idle' ? '● Unsaved' : saveLabels[$saveStatus]}
+    </span>
     <div class="modes">
       <button class:active={mode === 'edit'}    on:click={() => (mode = 'edit')}    title="Edit">
         <!-- Pencil -->
@@ -53,26 +89,25 @@
         {#if $editorLabels}<span>Preview</span>{/if}
       </button>
     </div>
-    <span class="save-status" class:dirty={$isDirty} class:error={$saveStatus === 'error'}>
-      {$isDirty && $saveStatus === 'idle' ? '● Unsaved' : saveLabels[$saveStatus]}
-    </span>
   </div>
 
   <div class="panes" class:split={mode === 'split'}>
     {#if mode === 'edit' || mode === 'split'}
       <textarea
+        bind:this={rawEl}
         class="raw"
         class:full={mode === 'edit'}
         value={$fileContent}
         on:input={onInput}
+        on:scroll={onRawScroll}
         spellcheck="true"
         placeholder="Start writing…"
       ></textarea>
     {/if}
 
     {#if mode === 'preview' || mode === 'split'}
-      <div class="preview" class:full={mode === 'preview'}>
-        <Viewer content={$fileContent} {file} on:wikilink={onWikiLink} />
+      <div class="preview" class:full={mode === 'preview'} bind:this={previewEl}>
+        <Viewer content={$fileContent} {file} on:wikilink={onWikiLink} on:checkbox-toggle={onCheckboxToggle} />
       </div>
     {/if}
   </div>
@@ -94,7 +129,6 @@
     border-bottom: 1px solid var(--color-border);
     background: var(--color-surface);
     flex-shrink: 0;
-    gap: 0.5rem;
   }
 
   .modes {
@@ -108,6 +142,9 @@
   }
 
   .modes button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: 0.2rem 0.65rem;
     border: none;
     border-radius: 4px;
@@ -127,8 +164,6 @@
   .save-status {
     font-size: 0.78rem;
     color: var(--color-text-muted);
-    min-width: 80px;
-    text-align: right;
   }
 
   .save-status.dirty {

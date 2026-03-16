@@ -41,8 +41,14 @@
     setTheme(next)
   }
 
-  // ── Sidebar (mobile drawer) ──────────────────────────────────────────────
-  let sidebarOpen = false
+  // ── Sidebar ───────────────────────────────────────────────────────────────
+  let sidebarOpen = false       // mobile: drawer open
+  let sidebarCollapsed = false  // desktop: panel collapsed
+
+  function toggleMenu() {
+    sidebarOpen = !sidebarOpen
+    sidebarCollapsed = !sidebarCollapsed
+  }
 
   // ── New note modal ───────────────────────────────────────────────────────
   let showNewModal = false
@@ -110,7 +116,7 @@
   <div class="app">
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <header>
-      <button class="icon-btn menu-btn" on:click={() => (sidebarOpen = !sidebarOpen)} title="Menu">
+      <button class="icon-btn menu-btn" on:click={toggleMenu} title="Toggle sidebar">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <line x1="2" y1="4" x2="14" y2="4"/>
           <line x1="2" y1="8" x2="14" y2="8"/>
@@ -123,6 +129,11 @@
       <SearchBar on:select={handleSelect} />
 
       <nav class="header-actions">
+        <a href="https://github.com/ryantiger658/Hash" target="_blank" rel="noopener noreferrer" class="icon-btn" title="GitHub">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+        </a>
         <button class="icon-btn theme-btn" on:click={cycleTheme} title="Theme: {currentTheme}">
           {#if currentTheme === 'light'}
             <!-- Sun -->
@@ -164,7 +175,7 @@
       {/if}
 
       <!-- Sidebar -->
-      <aside class="sidebar" class:open={sidebarOpen}>
+      <aside class="sidebar" class:open={sidebarOpen} class:collapsed={sidebarCollapsed}>
         <div class="sidebar-toolbar">
           <span class="sidebar-title">Notes</span>
           <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
@@ -370,14 +381,19 @@
 
   /* ── Shared button styles ────────────────────────────────────────────── */
   .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: none;
     background: transparent;
+    color: var(--color-text);
     font-size: 1rem;
     cursor: pointer;
     padding: 0.25rem 0.4rem;
     border-radius: 5px;
     line-height: 1;
     transition: background 0.1s;
+    text-decoration: none;
   }
 
   .icon-btn:hover {
@@ -433,8 +449,16 @@
     text-decoration: underline;
   }
 
-  /* ── Hamburger (hidden on desktop) ───────────────────────────────────── */
-  .menu-btn { display: none; }
+  /* ── Sidebar collapsed (desktop) ─────────────────────────────────────── */
+  .sidebar.collapsed {
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    border-right: none;
+  }
+
+  /* ── Hamburger (always visible) ──────────────────────────────────────── */
+  .menu-btn { display: inline-flex; }
 
   /* ── Responsive ──────────────────────────────────────────────────────── */
   @media (max-width: 640px) {

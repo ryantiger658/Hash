@@ -50,7 +50,8 @@ impl Vault {
                 .modified()?
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs() as i64;
-            let created = meta.created()
+            let created = meta
+                .created()
                 .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64);
@@ -179,7 +180,9 @@ mod tests {
     fn list_files_skips_mdkb_metadata() {
         let (vault, _dir) = setup();
         vault.write_file("note.md", b"content").unwrap();
-        vault.write_file(".mdkb/sync/note.toml", b"metadata").unwrap();
+        vault
+            .write_file(".mdkb/sync/note.toml", b"metadata")
+            .unwrap();
         let files = vault.list_files().unwrap();
         assert!(files.iter().all(|f| !f.path.starts_with(".mdkb")));
         assert_eq!(files.len(), 1);
