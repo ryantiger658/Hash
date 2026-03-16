@@ -42,6 +42,7 @@ help:
 	@echo "    build-docker     Build the Docker image ($(DOCKER_TAG))"
 	@echo ""
 	@echo "  Test & Lint"
+	@echo "    ci               Run all CI checks locally (fmt, clippy, test, ui build)"
 	@echo "    test             Run all Rust tests"
 	@echo "    lint             Run clippy + rustfmt check"
 	@echo "    fmt              Auto-format all Rust code"
@@ -147,6 +148,23 @@ build-docker:
 
 
 # ── Test & Lint ───────────────────────────────────────────────────────────────
+
+# Run every check the CI pipeline runs, in the same order.
+# All checks must pass before tagging a release or pushing to main.
+.PHONY: ci
+ci:
+	@echo "  [1/4] cargo fmt --check"
+	@~/.cargo/bin/cargo fmt --check
+	@echo "  [2/4] cargo clippy"
+	@~/.cargo/bin/cargo clippy -- -D warnings
+	@echo "  [3/4] cargo test"
+	@~/.cargo/bin/cargo test
+	@echo "  [4/4] ui build"
+	@cd ui && BUILD_TARGET=server npm run build
+	@echo ""
+	@echo "  All checks passed — safe to push."
+	@echo ""
+
 .PHONY: test
 test:
 	~/.cargo/bin/cargo test
