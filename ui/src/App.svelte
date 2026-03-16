@@ -4,9 +4,10 @@
   import { hasApiKey, clearApiKey } from './lib/api.js'
   import {
     fileTree, files, selectedPath, selectedFile, fileContent, isDirty,
-    loadVault, selectFile, createFile, deleteCurrentFile, deleteFolder,
+    loadVault, selectFile, createFile, deleteFile, deleteFolder,
     saveCurrentFile, openTodayJournal,
   } from './stores/vault.js'
+  import { version } from '../package.json'
   import { get } from 'svelte/store'
 
   import LoginForm    from './lib/components/LoginForm.svelte'
@@ -45,9 +46,10 @@
   let sidebarOpen = false       // mobile: drawer open
   let sidebarCollapsed = false  // desktop: panel collapsed
 
+  // Hamburger: mobile drawer toggle + desktop expand (only appears when collapsed)
   function toggleMenu() {
     sidebarOpen = !sidebarOpen
-    sidebarCollapsed = !sidebarCollapsed
+    sidebarCollapsed = false  // on desktop: always expands
   }
 
   // ── New note modal ───────────────────────────────────────────────────────
@@ -64,10 +66,8 @@
     sidebarOpen = false  // close drawer on mobile after selecting a file
   }
 
-  async function handleDelete() {
-    if (!$selectedPath) return
-    if (!confirm(`Delete "${$selectedPath}"? This cannot be undone.`)) return
-    await deleteCurrentFile()
+  async function handleDeleteFile(e) {
+    await deleteFile(e.detail)
   }
 
   async function handleDeleteFolder(e) {
@@ -116,7 +116,7 @@
   <div class="app">
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <header>
-      <button class="icon-btn menu-btn" on:click={toggleMenu} title="Toggle sidebar">
+      <button class="icon-btn menu-btn" class:visible={sidebarCollapsed} on:click={toggleMenu} title="Toggle sidebar">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <line x1="2" y1="4" x2="14" y2="4"/>
           <line x1="2" y1="8" x2="14" y2="8"/>
@@ -129,11 +129,6 @@
       <SearchBar on:select={handleSelect} />
 
       <nav class="header-actions">
-        <a href="https://github.com/ryantiger658/Hash" target="_blank" rel="noopener noreferrer" class="icon-btn" title="GitHub">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-          </svg>
-        </a>
         <button class="icon-btn theme-btn" on:click={cycleTheme} title="Theme: {currentTheme}">
           {#if currentTheme === 'light'}
             <!-- Sun -->
@@ -178,33 +173,36 @@
       <aside class="sidebar" class:open={sidebarOpen} class:collapsed={sidebarCollapsed}>
         <div class="sidebar-toolbar">
           <span class="sidebar-title">Notes</span>
-          <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
-            <!-- Plus -->
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <line x1="8" y1="2" x2="8" y2="14"/>
-              <line x1="2" y1="8" x2="14" y2="8"/>
-            </svg>
-          </button>
+          <div class="sidebar-toolbar-actions">
+            <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
+              <!-- Plus -->
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="8" y1="2" x2="8" y2="14"/>
+                <line x1="2" y1="8" x2="14" y2="8"/>
+              </svg>
+            </button>
+            <button class="collapse-btn" on:click={() => (sidebarCollapsed = true)} title="Collapse sidebar">
+              <!-- Chevron left -->
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="10,3 5,8 10,13"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="tree-scroll">
-          <FileTree nodes={$fileTree} on:select={handleSelect} on:delete-folder={handleDeleteFolder} />
+          <FileTree nodes={$fileTree} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} />
         </div>
 
-        {#if $selectedPath}
-          <div class="sidebar-footer">
-            <button class="delete-btn" on:click={handleDelete} title="Delete current note">
-              <!-- Trash -->
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 4h12"/>
-                <path d="M5 4V2h6v2"/>
-                <path d="M3 4l1 10h8l1-10"/>
-                <path d="M6.5 7v4M9.5 7v4"/>
-              </svg>
-              Delete
-            </button>
-          </div>
-        {/if}
+        <div class="sidebar-footer">
+          <a href="https://github.com/ryantiger658/Hash" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link" title="View on GitHub">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+            GitHub
+          </a>
+          <span class="app-version">v{version}</span>
+        </div>
       </aside>
 
       <!-- Main content -->
@@ -332,6 +330,30 @@
     color: var(--color-text-muted);
   }
 
+  .sidebar-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .collapse-btn {
+    display: none;  /* mobile: hidden */
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0 0.15rem;
+    border-radius: 4px;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .collapse-btn:hover {
+    background: var(--color-border);
+    color: var(--color-text);
+  }
+
   .tree-scroll {
     flex: 1;
     overflow-y: auto;
@@ -342,6 +364,34 @@
     padding: 0.5rem 0.75rem;
     border-top: 1px solid var(--color-border);
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .sidebar-meta-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    border-radius: 4px;
+    padding: 0.1rem 0.25rem;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .sidebar-meta-link:hover {
+    color: var(--color-text);
+    background: var(--color-border);
+  }
+
+  .app-version {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
   }
 
   /* ── Main ────────────────────────────────────────────────────────────── */
@@ -422,23 +472,6 @@
     background: var(--color-border);
   }
 
-  .delete-btn {
-    width: 100%;
-    padding: 0.35rem;
-    border: 1px solid var(--color-border);
-    border-radius: 5px;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-  }
-
-  .delete-btn:hover {
-    color: #f87171;
-    border-color: #f87171;
-  }
-
   .link-btn {
     border: none;
     background: transparent;
@@ -449,16 +482,21 @@
     text-decoration: underline;
   }
 
-  /* ── Sidebar collapsed (desktop) ─────────────────────────────────────── */
-  .sidebar.collapsed {
-    width: 0;
-    min-width: 0;
-    overflow: hidden;
-    border-right: none;
-  }
+  /* ── Hamburger: hidden on desktop by default; visible when collapsed ──── */
+  .menu-btn { display: none; }
+  .menu-btn.visible { display: inline-flex; }
 
-  /* ── Hamburger (always visible) ──────────────────────────────────────── */
-  .menu-btn { display: inline-flex; }
+  /* ── Desktop only ────────────────────────────────────────────────────── */
+  @media (min-width: 641px) {
+    .collapse-btn { display: inline-flex; }
+
+    .sidebar.collapsed {
+      width: 0;
+      min-width: 0;
+      overflow: hidden;
+      border-right: none;
+    }
+  }
 
   /* ── Responsive ──────────────────────────────────────────────────────── */
   @media (max-width: 640px) {

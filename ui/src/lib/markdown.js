@@ -77,12 +77,18 @@ marked.use({
   renderer: {
     // Fenced code blocks: syntax highlight with hljs
     code({ text, lang }) {
+      const safeText = text ?? ''
       const language = (lang ?? '').split(/\s+/)[0]
       if (language && hljs.getLanguage(language)) {
-        const highlighted = hljs.highlight(text, { language }).value
+        const highlighted = hljs.highlight(safeText, { language }).value
         return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
       }
-      return `<pre><code class="hljs">${hljs.highlightAuto(text).value}</code></pre>`
+      // No language: escape HTML manually rather than risk auto-detection failures
+      const escaped = safeText
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+      return `<pre><code class="hljs">${escaped}</code></pre>`
     },
     // Inline code: add color chip for hex colors
     codespan({ text }) {

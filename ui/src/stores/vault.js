@@ -117,6 +117,18 @@ export async function deleteFolder(folderPath) {
   await loadVault()
 }
 
+/** Delete any file by path. Clears the editor if the deleted file was open. */
+export async function deleteFile(path) {
+  if (!path) return
+  await api.deleteFile(path)
+  if (get(selectedPath) === path) {
+    selectedPath.set(null)
+    fileContent.set('')
+    savedContent.set('')
+  }
+  await loadVault()
+}
+
 /** Delete a file. Clears the editor if the deleted file was open. */
 export async function deleteCurrentFile() {
   const path = get(selectedPath)

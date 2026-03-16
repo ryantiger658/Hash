@@ -16,11 +16,17 @@
   function toggle(node) { open[node.path] = !open[node.path] }
   function select(node) { dispatch('select', node.path) }
   function bubble(e)    { dispatch('select', e.detail) }
-  function bubbleDelete(e) { dispatch('delete-folder', e.detail) }
+  function bubbleDelete(e)     { dispatch('delete-folder', e.detail) }
+  function bubbleDeleteFile(e) { dispatch('delete-file',   e.detail) }
 
   function confirmDeleteFolder(node) {
     const msg = `Delete folder "${node.name}" and all its contents? This cannot be undone.`
     if (confirm(msg)) dispatch('delete-folder', node.path)
+  }
+
+  function confirmDeleteFile(node) {
+    const msg = `Delete "${node.name}"? This cannot be undone.`
+    if (confirm(msg)) dispatch('delete-file', node.path)
   }
 </script>
 
@@ -58,25 +64,38 @@
           </button>
         </div>
         {#if open[node.path]}
-          <svelte:self nodes={node.children} depth={depth + 1} on:select={bubble} on:delete-folder={bubbleDelete} />
+          <svelte:self nodes={node.children} depth={depth + 1} on:select={bubble} on:delete-folder={bubbleDelete} on:delete-file={bubbleDeleteFile} />
         {/if}
       {:else}
-        <button
-          class="tree-row file"
-          class:active={$selectedPath === node.path}
-          style="padding-left: {depth * 14 + 8}px"
-          on:click={() => select(node)}
-          title={node.name}
-        >
-          <span class="icon">
-            <!-- Document -->
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/>
-              <path d="M10 2v3h3"/>
+        <div class="file-row-wrap">
+          <button
+            class="tree-row file"
+            class:active={$selectedPath === node.path}
+            style="padding-left: {depth * 14 + 8}px"
+            on:click={() => select(node)}
+            title={node.name}
+          >
+            <span class="icon">
+              <!-- Document -->
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/>
+                <path d="M10 2v3h3"/>
+              </svg>
+            </span>
+            <span class="name">{node.name.replace(/\.md$/, '')}</span>
+          </button>
+          <button
+            class="file-delete"
+            title="Delete file"
+            on:click|stopPropagation={() => confirmDeleteFile(node)}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 4h12"/>
+              <path d="M5 4V2h6v2"/>
+              <path d="M3 4l1 10h8l1-10"/>
             </svg>
-          </span>
-          <span class="name">{node.name.replace(/\.md$/, '')}</span>
-        </button>
+          </button>
+        </div>
       {/if}
     </li>
   {/each}
@@ -98,18 +117,21 @@
     flex-direction: column;
   }
 
-  .folder-row-wrap {
+  .folder-row-wrap,
+  .file-row-wrap {
     display: flex;
     align-items: center;
     position: relative;
   }
 
-  .folder-row-wrap .tree-row {
+  .folder-row-wrap .tree-row,
+  .file-row-wrap .tree-row {
     flex: 1;
     min-width: 0;
   }
 
-  .folder-delete {
+  .folder-delete,
+  .file-delete {
     display: none;
     align-items: center;
     justify-content: center;
@@ -126,11 +148,13 @@
     transition: color 0.1s, background 0.1s;
   }
 
-  .folder-row-wrap:hover .folder-delete {
+  .folder-row-wrap:hover .folder-delete,
+  .file-row-wrap:hover .file-delete {
     display: flex;
   }
 
-  .folder-delete:hover {
+  .folder-delete:hover,
+  .file-delete:hover {
     color: #f87171;
     background: var(--color-border);
   }
