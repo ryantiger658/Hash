@@ -102,17 +102,16 @@
     }
   }
 
+  async function openSyncConfig() {
+    try {
+      const existing = await tauriInvoke('get_config')
+      if (existing) syncConfigForm = { sync_interval_secs: 60, ...existing }
+    } catch { /* no config yet */ }
+    syncConfigError = ''
+    showSyncConfig = true
+  }
+
   async function manualSync() {
-    if (tauriSyncStatus && !tauriSyncStatus.configured) {
-      // Load any existing partial config, then open the form
-      try {
-        const existing = await tauriInvoke('get_config')
-        if (existing) syncConfigForm = { sync_interval_secs: 60, ...existing }
-      } catch { /* no config yet */ }
-      syncConfigError = ''
-      showSyncConfig = true
-      return
-    }
     try {
       await tauriInvoke('trigger_sync')
       await refreshSyncStatus()
@@ -405,19 +404,21 @@
               class:sync-pending={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes > 0}
               class:sync-offline={tauriSyncStatus.configured && !tauriSyncStatus.connected}
               class:sync-unconfigured={!tauriSyncStatus.configured}
-              on:click={manualSync}
+              on:click={openSyncConfig}
               title={!tauriSyncStatus.configured
                 ? 'Not configured — click to set up sync'
                 : tauriSyncStatus.connected
                   ? tauriSyncStatus.pending_changes > 0
-                    ? `${tauriSyncStatus.pending_changes} pending — click to sync`
-                    : 'Synced — click to sync now'
-                  : 'Offline — click to retry'}
+                    ? `${tauriSyncStatus.pending_changes} pending — click to configure`
+                    : 'Synced — click to configure'
+                  : 'Offline — click to configure'}
             >
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 8A6 6 0 0 1 2.4 11M2 8a6 6 0 0 1 11.6-3"/>
-                <polyline points="14,4 14,8 10,8"/>
-                <polyline points="2,12 2,8 6,8"/>
+              <!-- Server icon -->
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="1" y="2" width="14" height="4" rx="1.5"/>
+                <rect x="1" y="9" width="14" height="4" rx="1.5"/>
+                <circle cx="13" cy="4" r="0.8" fill="currentColor" stroke="none"/>
+                <circle cx="13" cy="11" r="0.8" fill="currentColor" stroke="none"/>
               </svg>
             </button>
           {/if}
@@ -528,6 +529,9 @@
         {/if}
         <div class="modal-actions">
           <button class="modal-cancel" on:click={() => (showSyncConfig = false)}>Cancel</button>
+          {#if tauriSyncStatus?.configured}
+            <button class="modal-cancel" on:click={async () => { showSyncConfig = false; await manualSync() }}>Sync Now</button>
+          {/if}
           <button class="modal-save" on:click={saveSyncConfig} disabled={syncConfigSaving}>
             {syncConfigSaving ? 'Saving…' : 'Save & Sync'}
           </button>

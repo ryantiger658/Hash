@@ -236,8 +236,8 @@ jobs:
 
   # ── Release: create GitHub Release ────────────────────────────────────────
   # Runs only on version tags after the Docker image is pushed and the
-  # security scan completes. Desktop builds are not yet implemented (M3/M4);
-  # Tauri jobs will be re-added when the desktop milestone begins.
+  # security scan completes. Desktop binaries are uploaded afterwards by
+  # the desktop-build job which depends on this one.
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -276,3 +276,77 @@ jobs:
             See the [README](https://github.com/${{ github.repository }}) for setup instructions.
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+
+  # ── Desktop: build Tauri app for macOS / Windows / Linux ──────────────────
+  # Runs only on version tags, after the GitHub Release exists so that
+  # tauri-action can upload the binaries as release assets.
+  desktop-build:
+    name: Desktop (${{ matrix.platform }})
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            extra-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: windows-latest
+            args: ""
+            extra-targets: ""
+          - platform: ubuntu-22.04
+            args: ""
+            extra-targets: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.extra-targets }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # Install UI node_modules so beforeBuildCommand (cd ../ui && npm run build) works
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build and upload desktop binaries
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          args: ${{ matrix.args }}

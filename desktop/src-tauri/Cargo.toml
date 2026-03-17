@@ -2,7 +2,7 @@
 
 [package]
 name = "hash-desktop"
-version = "0.1.0"
+version = "0.0.7"
 edition = "2021"
 description = "#ash desktop client — offline-first markdown sync"
 
