@@ -80,6 +80,70 @@
   let showNewModal    = false
   let showSettings = false
 
+  // ── Tauri sync status (desktop only) ─────────────────────────────────────
+  let tauriSyncStatus = null  // null = not in Tauri, object = { configured, connected, last_synced, pending_changes }
+  let showSyncConfig = false
+  let syncConfigForm = { server_url: '', api_key: '', local_vault_path: '', sync_interval_secs: 60 }
+  let syncConfigSaving = false
+  let syncConfigError = ''
+
+  // window.__TAURI__ is injected by Tauri (withGlobalTauri: true in tauri.conf.json).
+  // When running in a plain browser it doesn't exist, so all sync UI is hidden.
+  function tauriInvoke(cmd, args) {
+    return window.__TAURI__?.core?.invoke(cmd, args)
+  }
+
+  async function refreshSyncStatus() {
+    try {
+      const status = await tauriInvoke('get_sync_status')
+      if (status) tauriSyncStatus = status
+    } catch {
+      // ignore — not in Tauri context
+    }
+  }
+
+  async function manualSync() {
+    if (tauriSyncStatus && !tauriSyncStatus.configured) {
+      // Load any existing partial config, then open the form
+      try {
+        const existing = await tauriInvoke('get_config')
+        if (existing) syncConfigForm = { sync_interval_secs: 60, ...existing }
+      } catch { /* no config yet */ }
+      syncConfigError = ''
+      showSyncConfig = true
+      return
+    }
+    try {
+      await tauriInvoke('trigger_sync')
+      await refreshSyncStatus()
+    } catch {
+      // ignore
+    }
+  }
+
+  async function saveSyncConfig() {
+    syncConfigSaving = true
+    syncConfigError = ''
+    try {
+      await tauriInvoke('save_config', { config: { ...syncConfigForm, sync_interval_secs: Number(syncConfigForm.sync_interval_secs) } })
+      await refreshSyncStatus()
+      showSyncConfig = false
+    } catch(e) {
+      syncConfigError = String(e)
+    } finally {
+      syncConfigSaving = false
+    }
+  }
+
+  // Poll sync status every 5 s when running inside Tauri
+  onMount(() => {
+    if (typeof window !== 'undefined' && window.__TAURI__) {
+      refreshSyncStatus()
+      const id = setInterval(refreshSyncStatus, 5000)
+      return () => clearInterval(id)
+    }
+  })
+
   // ── Upload ────────────────────────────────────────────────────────────────
   let uploadInput
 
@@ -333,6 +397,30 @@
         </div>
 
         <div class="sidebar-footer">
+          {#if tauriSyncStatus !== null}
+            <!-- Sync status dot: green=synced, amber=pending, red=disconnected -->
+            <button
+              class="sync-status-btn"
+              class:sync-ok={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes === 0}
+              class:sync-pending={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes > 0}
+              class:sync-offline={tauriSyncStatus.configured && !tauriSyncStatus.connected}
+              class:sync-unconfigured={!tauriSyncStatus.configured}
+              on:click={manualSync}
+              title={!tauriSyncStatus.configured
+                ? 'Not configured — click to set up sync'
+                : tauriSyncStatus.connected
+                  ? tauriSyncStatus.pending_changes > 0
+                    ? `${tauriSyncStatus.pending_changes} pending — click to sync`
+                    : 'Synced — click to sync now'
+                  : 'Offline — click to retry'}
+            >
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 8A6 6 0 0 1 2.4 11M2 8a6 6 0 0 1 11.6-3"/>
+                <polyline points="14,4 14,8 10,8"/>
+                <polyline points="2,12 2,8 6,8"/>
+              </svg>
+            </button>
+          {/if}
           <button class="icon-btn muted sidebar-settings-btn" on:click={openSettings} title="Settings">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
               <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
@@ -411,6 +499,41 @@
 
   {#if showSettings}
     <SettingsPanel on:close={() => (showSettings = false)} on:poll-interval-change={onPollIntervalChange} />
+  {/if}
+
+  {#if showSyncConfig}
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div class="modal-backdrop" on:click={() => (showSyncConfig = false)}>
+      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+      <div class="modal-box" on:click|stopPropagation>
+        <h3 class="modal-title">Desktop Sync Setup</h3>
+        <label class="modal-field">
+          <span>Server URL</span>
+          <input bind:value={syncConfigForm.server_url} placeholder="http://192.168.1.100:3535" />
+        </label>
+        <label class="modal-field">
+          <span>API Key</span>
+          <input bind:value={syncConfigForm.api_key} type="password" placeholder="your-api-key" />
+        </label>
+        <label class="modal-field">
+          <span>Local vault path</span>
+          <input bind:value={syncConfigForm.local_vault_path} placeholder="/Users/you/vault" />
+        </label>
+        <label class="modal-field">
+          <span>Sync interval (seconds)</span>
+          <input bind:value={syncConfigForm.sync_interval_secs} type="number" min="5" />
+        </label>
+        {#if syncConfigError}
+          <p class="modal-error">{syncConfigError}</p>
+        {/if}
+        <div class="modal-actions">
+          <button class="modal-cancel" on:click={() => (showSyncConfig = false)}>Cancel</button>
+          <button class="modal-save" on:click={saveSyncConfig} disabled={syncConfigSaving}>
+            {syncConfigSaving ? 'Saving…' : 'Save & Sync'}
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 {/if}
 
@@ -643,6 +766,32 @@
     gap: 0.5rem;
   }
 
+  .sync-status-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .sync-status-btn:hover { background: var(--color-border); }
+
+  /* Grey — desktop app, but no config yet */
+  .sync-unconfigured { color: var(--color-text-muted); }
+  /* Green — connected and fully synced */
+  .sync-ok  { color: #4ade80; }
+  /* Amber — connected but has pending changes */
+  .sync-pending { color: #f59e0b; }
+  /* Red — offline / unreachable */
+  .sync-offline { color: #f87171; }
+
   .sidebar-settings-btn {
     padding: 0.15rem 0.25rem;
     margin-right: auto;
@@ -803,6 +952,94 @@
     padding: 0;
     text-decoration: underline;
   }
+
+  /* ── Sync config modal ───────────────────────────────────────────────────── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-box {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    width: 360px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .modal-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .modal-field input {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    padding: 0.35rem 0.6rem;
+    color: var(--color-text);
+    font-size: 0.85rem;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .modal-field input:focus { border-color: var(--color-accent); }
+
+  .modal-error {
+    font-size: 0.78rem;
+    color: #f87171;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .modal-cancel {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+
+  .modal-cancel:hover { background: var(--color-border); color: var(--color-text); }
+
+  .modal-save {
+    background: var(--color-accent);
+    border: none;
+    border-radius: 5px;
+    padding: 0.3rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #000;
+    cursor: pointer;
+  }
+
+  .modal-save:disabled { opacity: 0.5; cursor: default; }
+  .modal-save:not(:disabled):hover { filter: brightness(1.1); }
 
   /* ── Desktop only ────────────────────────────────────────────────────── */
   @media (min-width: 641px) {
