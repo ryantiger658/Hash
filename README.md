@@ -76,22 +76,29 @@ Download the latest release for your platform from the [Releases](../../releases
 
 ### macOS — Gatekeeper warning
 
-Because the app is not yet notarized with Apple, macOS will show:
+Because the app is not notarized with Apple, macOS Gatekeeper will block it on first launch:
 
 > *"hash.app" cannot be opened because Apple cannot verify it is free of malware.*
 
-**To open it anyway:**
+**macOS Sequoia (15+):**
+
+1. Click **Done** to dismiss the dialog
+2. Open **System Settings → Privacy & Security**
+3. Scroll down to the Security section — you will see *"hash.app was blocked"*
+4. Click **Open Anyway** → enter your password → click **Open Anyway** again
+
+**macOS Ventura / Sonoma (13–14):**
 
 1. Right-click (or Control-click) `hash.app` → **Open**
-2. Click **Open** in the dialog that appears
+2. Click **Open** in the confirmation dialog
 
-You only need to do this once. Subsequent launches open normally.
-
-Alternatively, remove the quarantine flag from Terminal:
+**Alternative (any macOS version) — Terminal:**
 
 ```bash
 xattr -cr /Applications/hash.app
 ```
+
+You only need to do this once. Subsequent launches open normally.
 
 ### First launch
 

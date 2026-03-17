@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v0.7** — M0 and M1 complete; v0.0.3 shipped; v0.0.4 in progress (M2 + image rendering + settings + file rename)
+> Status: **v0.9** — M0–M3 complete; v0.0.8 shipped
 
 ---
 
@@ -130,6 +130,56 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - View rendered markdown offline
 - Edit markdown with live preview
 - Keyboard-friendly interface
+
+---
+
+## Search v2 Requirements (M6)
+
+### Problems with the current implementation
+
+- **O(n) per query** — every search reads every markdown file from disk and scans line by line; slow for vaults with hundreds of notes
+- **Single result per file** — only the first matching line is returned; users miss other relevant matches in the same file
+- **No relevance ranking** — all content matches are equal; a file that mentions the query once ranks the same as one built around it
+- **No query syntax** — can't filter by tag, path prefix, or date
+- **No typo tolerance** — `"journl"` finds nothing; `"journal"` finds everything
+- **Index rebuilt on every restart** — no persistence; cold start on large vaults is slow
+
+### Goals
+
+- Sub-100ms search response on vaults up to 10,000 notes
+- Ranked results with BM25 scoring (term frequency × inverse document frequency)
+- Multiple snippets per file — surface the top 3 matching excerpts with surrounding context
+- Incremental index updates — reindex only changed files, not the full vault
+- Persist index to `.mdkb/search-index/` so cold starts are instant
+- Search syntax: `tag:rust`, `title:sync`, `path:journal/`, `#tagname`
+- Fuzzy matching for single-term queries (edit distance 1 for terms > 4 chars)
+- Pagination: `limit` + `offset` query params; response includes `total` count
+
+### Technology
+
+- **[Tantivy](https://github.com/quickwit-oss/tantivy)** — pure-Rust full-text search library; BM25 built-in; used in production by Quickwit and others
+- Schema: `path` (stored, not indexed), `title` (indexed, boosted 3×), `tags` (indexed, boosted 2×), `body` (indexed), `modified` (fast field for date filtering)
+- File watcher integration: hook into the existing poll loop to enqueue index updates
+
+### API changes
+
+```
+GET /api/search?q=<query>&limit=20&offset=0&fuzzy=true
+```
+
+Response:
+```json
+[
+  {
+    "path": "notes/rust-async.md",
+    "title": "Rust Async Patterns",
+    "score": 4.82,
+    "snippets": [
+      { "text": "...tokio runtime for async <mark>search</mark> tasks...", "line": 14 }
+    ]
+  }
+]
+```
 
 ---
 
@@ -285,9 +335,12 @@ vault/
 |---|---|---|
 | M0 — Foundations | Repo setup, Docker scaffold, basic API | ✅ Complete |
 | M1 — Web UI | Read/edit markdown, folder tree, search, journal, Docker | ✅ Complete |
-| M2 — Sync Protocol | Delta sync, version tracking, conflict detection | 🔧 v0.0.4 |
-| M3 — Desktop Client (Sync) | Background sync agent, offline queue, auto-reconnect | 🔲 Planned |
-| M4 — Desktop Client (Editor) | Offline viewer + editor | 🔲 Planned |
+| M2 — Sync Protocol | Delta sync, version tracking, conflict detection | ✅ Complete (v0.0.4) |
+| M3 — Desktop Client (Sync) | Background sync agent, offline queue, auto-reconnect | ✅ Complete (v0.0.6–v0.0.8) |
+| M4 — Desktop → Server Push | Two-way sync: edits in desktop webview push back to server | 🔲 Planned |
+| M5 — Conflict Resolution UI | Git-style diff viewer; user picks lines or accepts either side | 🔲 Planned |
+| M6 — Search v2 | Inverted index, BM25 ranking, search syntax, fuzzy match | 🔲 Planned |
+| M7 — Desktop Client (Editor) | Offline viewer + editor without server connectivity | 🔲 Planned |
 
 ---
 
@@ -305,6 +358,8 @@ Requests collected from early users — not yet scheduled for implementation:
 | Tag browser | Filter and browse notes by tag; sidebar panel or search integration |
 | Vault symlinks | Symlink files or directories from outside the vault into it (e.g. `vault/hash/ -> project docs`); requires WalkDir to preserve symlink-relative paths while reading through to target content |
 | Vim keybindings | Optional vim modal editing (normal/insert/visual) in the editor pane; controlled via `vim_mode` config flag |
+| E2E encryption | Encrypt vault contents at rest and in transit beyond HTTPS; key management TBD; impacts search (index over ciphertext vs. client-side search) |
+| macOS notarization | Apple Developer account ($99/yr) required; removes Gatekeeper warning; deferred indefinitely — README documents the manual workaround for all macOS versions |
 
 ---
 
@@ -332,3 +387,5 @@ Requests collected from early users — not yet scheduled for implementation:
 | 0.6 | 2026-03-16 | v0.0.3 RC: YAML frontmatter, journal button, hidden files config, line numbers, floating mode panel, search ranking, save dot, light mode contrast; backlog updated |
 | 0.7 | 2026-03-16 | Note Format Specification and Backwards Compatibility Policy added; vault schema versioning and migration runner added (schema v1); spell-check config added |
 | 0.8 | 2026-03-16 | v0.0.4 scope defined: M2 sync protocol, image rendering (session token auth), settings panel, file rename, auto-continue lists, folder delete bug fix |
+| 0.9 | 2026-03-17 | M3 complete (v0.0.6–v0.0.8): desktop sync engine, config UI, server icon, login fix, icon redesign; backlog updated with e2e encryption, push-from-desktop, conflict UI, notarization |
+| 1.0 | 2026-03-17 | Roadmap updated: M4 (desktop→server push), M5 (conflict UI), M6 (Search v2/Tantivy), M7 (offline editor); notarization deferred; macOS Gatekeeper docs updated for Sequoia |
