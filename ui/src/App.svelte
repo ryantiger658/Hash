@@ -6,7 +6,7 @@
     fileTree, files, selectedPath, selectedFile, fileContent,
     isDirty, saveStatus, aliasMap, remoteChangeAvailable, pollIntervalSecs,
     loadVault, selectFile, createFile, deleteFile, deleteFolder, renameItem,
-    saveCurrentFile, openTodayJournal,
+    saveCurrentFile, openTodayJournal, uploadFiles,
     startPolling, stopPolling, pollVault, acceptRemoteChange,
     startOpenFilePoll, stopOpenFilePoll,
   } from './stores/vault.js'
@@ -16,6 +16,7 @@
   import LoginForm    from './lib/components/LoginForm.svelte'
   import FileTree     from './lib/components/FileTree.svelte'
   import Editor       from './lib/components/Editor.svelte'
+  import AssetViewer  from './lib/components/AssetViewer.svelte'
   import SearchBar    from './lib/components/SearchBar.svelte'
   import NewItemModal    from './lib/components/NewItemModal.svelte'
   import SettingsPanel   from './lib/components/SettingsPanel.svelte'
@@ -78,6 +79,25 @@
   // ── Modals ───────────────────────────────────────────────────────────────
   let showNewModal    = false
   let showSettings = false
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+  let uploadInput
+
+  function triggerUpload() { uploadInput?.click() }
+
+  async function handleUpload(e) {
+    const files = e.target.files
+    if (!files?.length) return
+    // Target the folder of the currently open file, or vault root
+    const folder = $selectedPath?.includes('/')
+      ? $selectedPath.slice(0, $selectedPath.lastIndexOf('/'))
+      : ''
+    await uploadFiles(files, folder)
+    e.target.value = ''   // reset so re-uploading the same file triggers change
+  }
+
+  // True when the selected file is a non-markdown asset
+  $: isAsset = $selectedPath ? !$selectedPath.endsWith('.md') : false
 
   function openSettings() {
     showSettings = true
@@ -292,12 +312,18 @@
                   <line x1="1" y1="7" x2="15" y2="7"/>
                 </svg>
               </button>
+              <button class="icon-btn muted" on:click={triggerUpload} title="Upload file">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M13.5 7.5l-6 6a4 4 0 01-5.657-5.657l6.364-6.364a2.5 2.5 0 013.536 3.536L5.379 11.35a1 1 0 01-1.415-1.414l5.657-5.657"/>
+                </svg>
+              </button>
               <button class="new-btn" on:click={() => (showNewModal = true)} title="New note (⌘N)">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                   <line x1="8" y1="2" x2="8" y2="14"/>
                   <line x1="2" y1="8" x2="14" y2="8"/>
                 </svg>
               </button>
+              <input bind:this={uploadInput} type="file" multiple style="display:none" on:change={handleUpload} />
             </div>
           {/if}
         </div>
@@ -328,8 +354,8 @@
         </div>
       </aside>
 
-      <!-- Floating editor mode panel (right side) -->
-      {#if $selectedPath}
+      <!-- Floating editor mode panel (right side) — only for markdown files -->
+      {#if $selectedPath && !isAsset}
         <div class="editor-mode-float">
           <button class:active={editorMode === 'edit'} on:click={() => (editorMode = 'edit')} title="Edit">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -366,7 +392,9 @@
             <button class="banner-dismiss" on:click={() => remoteChangeAvailable.set(false)} title="Dismiss">✕</button>
           </div>
         {/if}
-        {#if $selectedPath}
+        {#if $selectedPath && isAsset}
+          <AssetViewer path={$selectedPath} />
+        {:else if $selectedPath}
           <Editor file={$selectedFile} bind:mode={editorMode} on:wikilink={handleWikiLink} />
         {:else}
           <div class="empty-state">

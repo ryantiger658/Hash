@@ -603,6 +603,86 @@ async fn rename_into_subdirectory() {
     assert_eq!(body_string(moved).await, "moved");
 }
 
+#[tokio::test]
+async fn rename_file_with_spaces_and_dots() {
+    let (app, _dir) = make_app();
+    // Upload a file whose name has spaces and multiple dots (like a macOS screenshot)
+    app.clone()
+        .oneshot(auth_put(
+            "/api/files/Screenshot%202026-03-01%20at%2021.46.19.png",
+            "fake png data",
+        ))
+        .await
+        .unwrap();
+
+    // Rename it via JSON body (paths are NOT URL-encoded in the JSON)
+    let res = app
+        .clone()
+        .oneshot(auth_post_json(
+            "/api/files/rename",
+            serde_json::json!({
+                "from": "Screenshot 2026-03-01 at 21.46.19.png",
+                "to": "screenshot.png"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+
+    // New path exists
+    let new = app
+        .oneshot(auth_get("/api/files/screenshot.png"))
+        .await
+        .unwrap();
+    assert_eq!(new.status(), StatusCode::OK);
+    assert_eq!(body_string(new).await, "fake png data");
+}
+
+#[tokio::test]
+async fn vault_asset_serves_file_with_spaces_in_path() {
+    let (app, _dir) = make_app();
+    // Upload via API (path URL-encoded in URI, decoded by Axum into file on disk)
+    app.clone()
+        .oneshot(auth_put(
+            "/api/files/Screenshot%202026-03-01%20at%2021.46.19.png",
+            "fake png data",
+        ))
+        .await
+        .unwrap();
+
+    // Get a session token
+    let session_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/auth/session")
+                .header("Authorization", format!("Bearer {TEST_KEY}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let token = body_json(session_res).await["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Access via vault-asset endpoint (spaces URL-encoded)
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/vault-asset/Screenshot%202026-03-01%20at%2021.46.19.png?token={token}"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
 // ── Delete directory ──────────────────────────────────────────────────────────
 
 #[tokio::test]

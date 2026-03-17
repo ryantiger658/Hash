@@ -1,5 +1,6 @@
 use crate::AppState;
 use axum::{
+    extract::DefaultBodyLimit,
     middleware,
     routing::{delete, get, post, put},
     Router,
@@ -52,6 +53,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/api", public_api.merge(protected_api))
         // Serve the compiled Svelte frontend from the static/ directory
         .fallback_service(tower_http::services::ServeDir::new("static"))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50 MB upload limit
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)

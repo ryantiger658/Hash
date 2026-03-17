@@ -99,6 +99,15 @@ export async function selectFile(path) {
   }
 
   selectedPath.set(path)
+
+  // Non-markdown assets (images, attachments) are shown in the AssetViewer —
+  // no text content to fetch or edit.
+  if (!path.endsWith('.md')) {
+    fileContent.set('')
+    savedContent.set('')
+    return
+  }
+
   const text = await api.getFile(path)
   fileContent.set(text)
   savedContent.set(text)
@@ -113,6 +122,22 @@ export async function selectFile(path) {
       return next
     })
   }
+}
+
+/**
+ * Upload a FileList into the vault under targetFolder.
+ * Each file is read as binary and PUT to /api/files/<folder>/<filename>.
+ * Reloads the vault file list when all uploads settle.
+ */
+export async function uploadFiles(fileList, targetFolder = '') {
+  const uploads = Array.from(fileList).map(async (file) => {
+    const prefix = targetFolder ? `${targetFolder}/` : ''
+    const path = prefix + file.name
+    const buf = await file.arrayBuffer()
+    await api.putFile(path, new Uint8Array(buf))
+  })
+  await Promise.allSettled(uploads)
+  await loadVault()
 }
 
 /** True if `path` is a journal file whose content is only the auto-generated heading. */

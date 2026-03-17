@@ -46,19 +46,38 @@
     if (confirm(msg)) dispatch('delete-file', node.path)
   }
 
+  // Returns 'markdown' | 'image' | 'video' | 'attachment'
+  function fileType(name) {
+    const ext = name.split('.').pop()?.toLowerCase() ?? ''
+    if (name.endsWith('.md')) return 'markdown'
+    if (/^(png|jpg|jpeg|gif|webp|svg|avif|bmp|ico)$/.test(ext)) return 'image'
+    if (/^(mp4|webm|ogg|mov|avi)$/.test(ext)) return 'video'
+    return 'attachment'
+  }
+
+  // Display name: strip .md for markdown files; show full name for assets
+  function displayName(name) {
+    return name.endsWith('.md') ? name.replace(/\.md$/, '') : name
+  }
+
   function startRename(node) {
     renamingPath = node.path
-    // Pre-fill without .md extension for files
-    renameValue = node.isDir ? node.name : node.name.replace(/\.md$/, '')
+    renameValue = node.isDir ? node.name : displayName(node.name)
   }
 
   function commitRename(node) {
     const newName = renameValue.trim()
     renamingPath = null
-    if (!newName || newName === (node.isDir ? node.name : node.name.replace(/\.md$/, ''))) return
-    // Build the new full path: same parent directory, new name
+    if (!newName || newName === (node.isDir ? node.name : displayName(node.name))) return
     const dir = node.path.includes('/') ? node.path.slice(0, node.path.lastIndexOf('/') + 1) : ''
-    const newPath = node.isDir ? dir + newName : dir + newName + (newName.endsWith('.md') ? '' : '.md')
+    let newPath
+    if (node.isDir) {
+      newPath = dir + newName
+    } else if (node.name.endsWith('.md')) {
+      newPath = dir + newName + (newName.endsWith('.md') ? '' : '.md')
+    } else {
+      newPath = dir + newName   // asset: keep name as typed
+    }
     dispatch('rename', { from: node.path, to: newPath })
   }
 
@@ -141,17 +160,39 @@
             <button
               class="tree-row file"
               class:active={$selectedPath === node.path}
+              class:asset={fileType(node.name) !== 'markdown'}
               style="padding-left: {depth * 14 + 8}px"
               on:click={() => select(node)}
               title={node.name}
             >
               <span class="icon">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/>
-                  <path d="M10 2v3h3"/>
-                </svg>
+                {#if fileType(node.name) === 'image'}
+                  <!-- Image icon -->
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1" y="2" width="14" height="12" rx="1.5"/>
+                    <circle cx="5.5" cy="6.5" r="1"/>
+                    <path d="M1 11l3.5-3.5L7 10l2.5-2.5L15 11"/>
+                  </svg>
+                {:else if fileType(node.name) === 'video'}
+                  <!-- Video icon -->
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1" y="3" width="10" height="10" rx="1.5"/>
+                    <path d="M11 6l4-2v8l-4-2V6z"/>
+                  </svg>
+                {:else if fileType(node.name) === 'attachment'}
+                  <!-- Paperclip icon -->
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13.5 7.5l-6 6a4 4 0 01-5.657-5.657l6.364-6.364a2.5 2.5 0 013.536 3.536L5.379 11.35a1 1 0 01-1.415-1.414l5.657-5.657"/>
+                  </svg>
+                {:else}
+                  <!-- Markdown doc icon -->
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 2h6l3 3v9a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/>
+                    <path d="M10 2v3h3"/>
+                  </svg>
+                {/if}
               </span>
-              <span class="name">{node.name.replace(/\.md$/, '')}</span>
+              <span class="name">{displayName(node.name)}</span>
             </button>
             <button class="row-action rename-btn" title="Rename" on:click|stopPropagation={() => startRename(node)}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -277,6 +318,14 @@
     background: transparent;
     color: var(--color-accent);
     font-weight: 500;
+  }
+
+  .tree-row.asset {
+    color: var(--color-text-muted);
+  }
+
+  .tree-row.asset.active {
+    color: var(--color-accent);
   }
 
   .file-row-wrap.active {

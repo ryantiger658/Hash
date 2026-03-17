@@ -46,7 +46,10 @@ pub async fn get_vault_asset(
     // Read the file (path-traversal protected inside vault.read_file)
     let bytes = match state.vault.read_file(&path) {
         Ok(b) => b,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::warn!("vault_asset({path:?}) error: {e}");
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
 
     let content_type = content_type_for(&path);
