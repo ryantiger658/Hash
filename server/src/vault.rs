@@ -39,7 +39,14 @@ impl Vault {
     }
 
     /// List all markdown files and attachments in the vault.
-    pub fn list_files(&self) -> Result<Vec<FileEntry>> {
+    ///
+    /// `large_file_threshold` controls the checksum strategy:
+    /// - Files **smaller** than the threshold get a full SHA-256 hex string.
+    /// - Files **at or above** the threshold get `"mtime:<secs>-size:<bytes>"` to
+    ///   avoid reading large attachments on every poll.
+    ///
+    /// Pass `DEFAULT_LARGE_FILE_THRESHOLD` for the default behaviour.
+    pub fn list_files(&self, large_file_threshold: u64) -> Result<Vec<FileEntry>> {
         let mut entries = Vec::new();
 
         // Capture flag so the closure doesn't borrow `self`.
@@ -100,7 +107,7 @@ impl Vault {
                     .ok()
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| d.as_secs() as i64);
-                let checksum = match checksum_file(path) {
+                let checksum = match checksum_file(path, &meta, large_file_threshold) {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
@@ -168,6 +175,24 @@ impl Vault {
         Ok(std::fs::remove_file(full)?)
     }
 
+    /// Move/rename a file or directory within the vault.
+    /// Both `from` and `to` are vault-relative paths.
+    pub fn rename(&self, from: &str, to: &str) -> Result<()> {
+        let full_from = self.full_path(from)?;
+        let full_to = self.full_path(to)?;
+        if let Some(parent) = full_to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        Ok(std::fs::rename(full_from, full_to)?)
+    }
+
+    /// Recursively delete a directory and all its contents by vault-relative path.
+    pub fn delete_dir(&self, rel_path: &str) -> Result<()> {
+        let full = self.full_path(rel_path)?;
+        anyhow::ensure!(full.is_dir(), "Not a directory: {rel_path}");
+        Ok(std::fs::remove_dir_all(full)?)
+    }
+
     /// Resolve a vault-relative path to a full filesystem path.
     /// Rejects any path that escapes the vault root (path traversal protection).
     pub fn full_path(&self, rel_path: &str) -> Result<PathBuf> {
@@ -181,6 +206,26 @@ impl Vault {
         Ok(resolved)
     }
 
+    /// Return the checksum and last-modified timestamp (Unix seconds) for a single
+    /// vault file. Uses the same threshold logic as `list_files`.
+    /// Intended for the frequent open-file poll endpoint.
+    pub fn file_checksum(
+        &self,
+        rel_path: &str,
+        large_file_threshold: u64,
+    ) -> Result<(String, i64)> {
+        let full = self.full_path(rel_path)?;
+        let meta = std::fs::metadata(&full)?;
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let checksum = checksum_file(&full, &meta, large_file_threshold)?;
+        Ok((checksum, modified))
+    }
+
     /// Convert an absolute path to a vault-relative string with forward slashes.
     fn relative_path(&self, abs: &Path) -> Result<String> {
         let rel = abs
@@ -190,11 +235,29 @@ impl Vault {
     }
 }
 
-/// SHA-256 checksum of a file's contents, returned as a hex string.
-fn checksum_file(path: &Path) -> Result<String> {
-    let bytes = std::fs::read(path)?;
-    let hash = Sha256::digest(&bytes);
-    Ok(hex::encode(hash))
+/// Default large-file threshold (512 KiB). Files at or above this size use
+/// mtime+size instead of SHA-256 during vault listing. Users can adjust this
+/// via the settings panel (stored in `.mdkb/ui-settings.toml`).
+pub const DEFAULT_LARGE_FILE_THRESHOLD: u64 = 512 * 1024;
+
+/// Return a change-detection string for a file.
+/// - Small files  (< threshold): full SHA-256 hex string.
+/// - Large files (>= threshold): `"mtime:<secs>-size:<bytes>"` — reads no
+///   file data, so poll overhead for large attachments is near-zero.
+fn checksum_file(path: &Path, meta: &std::fs::Metadata, threshold: u64) -> Result<String> {
+    if meta.len() < threshold {
+        let bytes = std::fs::read(path)?;
+        let hash = Sha256::digest(&bytes);
+        Ok(hex::encode(hash))
+    } else {
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        Ok(format!("mtime:{}-size:{}", mtime, meta.len()))
+    }
 }
 
 /// Normalize a path without requiring it to exist on disk (no canonicalize).
@@ -247,7 +310,7 @@ mod tests {
         vault.write_file("one.md", b"one").unwrap();
         vault.write_file("two.md", b"two").unwrap();
         vault.write_file("sub/three.md", b"three").unwrap();
-        let files = vault.list_files().unwrap();
+        let files = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains(&"one.md"));
         assert!(paths.contains(&"two.md"));
@@ -261,7 +324,7 @@ mod tests {
         vault
             .write_file(".mdkb/sync/note.toml", b"metadata")
             .unwrap();
-        let files = vault.list_files().unwrap();
+        let files = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         assert!(files.iter().all(|f| !f.path.starts_with(".mdkb")));
         assert_eq!(files.len(), 1);
     }
@@ -291,7 +354,7 @@ mod tests {
     fn file_entry_includes_checksum_and_size() {
         let (vault, _dir) = setup();
         vault.write_file("sized.md", b"hello world").unwrap();
-        let files = vault.list_files().unwrap();
+        let files = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         let entry = files.iter().find(|f| f.path == "sized.md").unwrap();
         assert_eq!(entry.size, 11);
         assert!(!entry.checksum.is_empty());
@@ -302,11 +365,11 @@ mod tests {
     fn checksum_is_deterministic() {
         let (vault, _dir) = setup();
         vault.write_file("det.md", b"same content").unwrap();
-        let f1 = vault.list_files().unwrap();
+        let f1 = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         let c1 = &f1[0].checksum;
         // Overwrite with identical content
         vault.write_file("det.md", b"same content").unwrap();
-        let f2 = vault.list_files().unwrap();
+        let f2 = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         let c2 = &f2[0].checksum;
         assert_eq!(c1, c2);
     }
@@ -315,9 +378,13 @@ mod tests {
     fn checksum_differs_for_different_content() {
         let (vault, _dir) = setup();
         vault.write_file("change.md", b"version 1").unwrap();
-        let c1 = vault.list_files().unwrap()[0].checksum.clone();
+        let c1 = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap()[0]
+            .checksum
+            .clone();
         vault.write_file("change.md", b"version 2").unwrap();
-        let c2 = vault.list_files().unwrap()[0].checksum.clone();
+        let c2 = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap()[0]
+            .checksum
+            .clone();
         assert_ne!(c1, c2);
     }
 
@@ -328,7 +395,7 @@ mod tests {
         vault.write_file("visible.md", b"hello").unwrap();
         vault.write_file(".hidden.md", b"secret").unwrap();
         vault.write_file(".attachments/image.png", b"img").unwrap();
-        let files = vault.list_files().unwrap();
+        let files = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         assert!(files.iter().any(|f| f.path == "visible.md"));
         assert!(files.iter().all(|f| !f.path.starts_with('.')));
     }
@@ -339,7 +406,7 @@ mod tests {
         let vault = Vault::new(dir.path().to_str().unwrap(), true);
         vault.write_file("visible.md", b"hello").unwrap();
         vault.write_file(".hidden.md", b"secret").unwrap();
-        let files = vault.list_files().unwrap();
+        let files = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains(&"visible.md"));
         assert!(paths.contains(&".hidden.md"));

@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte'
   import { renderMarkdown } from '../markdown.js'
   import { parseFrontmatter, normalizeTags, normalizeArray } from '../frontmatter.js'
+  import { imageToken } from '../theme.js'
 
   export let content = ''
   /** FileEntry from the server — provides created/modified timestamps. */
@@ -21,7 +22,7 @@
     }
   }
 
-  $: html        = renderMarkdown(_fm.body)
+  $: html        = renderMarkdown(_fm.body, file?.path ?? '', $imageToken)
   $: tags        = normalizeTags(_fm.meta.tags ?? _fm.meta.tag)
   $: aliases     = normalizeArray(_fm.meta.aliases ?? _fm.meta.alias)
   $: otherFields = Object.entries(_fm.meta).filter(([k]) => !KNOWN.has(k))

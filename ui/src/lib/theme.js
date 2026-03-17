@@ -5,12 +5,13 @@
  * - Light/dark preference is stored in localStorage, with "system" as the default.
  * - Both are applied as CSS custom properties on <html>.
  */
-import { writable } from 'svelte/store'
+import { writable, get } from 'svelte/store'
+import { api } from './api.js'
 
 export const THEMES = ['light', 'dark', 'system']
 
-/** Whether editor mode buttons should show text labels (server-configured). */
-export const editorLabels = writable(false)
+/** Reactive store tracking the active theme — updated by setTheme(). */
+export const activeTheme = writable(localStorage.getItem('hash-theme') ?? 'system')
 
 /** Whether to show line numbers in the editor (server-configured). */
 export const lineNumbers = writable(false)
@@ -18,24 +19,39 @@ export const lineNumbers = writable(false)
 /** Whether to enable browser spell-check in the editor (server-configured). */
 export const spellCheck = writable(false)
 
-/** Fetch UI config from the server and apply the accent color. */
+/** Short-lived session token for vault-asset image URLs (not the API key). */
+export const imageToken = writable('')
+
+/** Fetch a new session token and store it. Call after successful login. */
+export async function refreshImageToken() {
+  try {
+    const { token } = await api.createSession()
+    imageToken.set(token)
+  } catch {
+    // Non-fatal — images just won't load if unauthenticated
+  }
+}
+
+/** Fetch UI config from the server, apply settings, and return the raw config object.
+ *  The caller can use `poll_interval_secs` etc. to configure polling. */
 export async function loadServerTheme() {
   try {
     const res = await fetch('/api/ui-config')
-    if (!res.ok) return
-    const { secondary_color, default_theme, editor_labels, line_numbers, spell_check } = await res.json()
+    if (!res.ok) return null
+    const cfg = await res.json()
+    const { secondary_color, default_theme, line_numbers, spell_check } = cfg
 
     applyAccentColor(secondary_color)
-    editorLabels.set(!!editor_labels)
     lineNumbers.set(!!line_numbers)
     spellCheck.set(!!spell_check)
 
-    // Only apply the server's default_theme if the user hasn't saved a preference.
-    if (!localStorage.getItem('hash-theme')) {
-      setTheme(default_theme)
-    }
+    // Server is authoritative for theme. Apply it and update localStorage so
+    // initTheme() prevents a flash on next page load.
+    setTheme(default_theme)
+    return cfg
   } catch {
     // Server unreachable (e.g. desktop offline mode) — fall back to stored or system.
+    return null
   }
 }
 
@@ -52,6 +68,7 @@ export function applyAccentColor(hex) {
 export function setTheme(theme) {
   if (!THEMES.includes(theme)) return
   localStorage.setItem('hash-theme', theme)
+  activeTheme.set(theme)
   applyTheme(theme)
 }
 

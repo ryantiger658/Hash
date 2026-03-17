@@ -64,9 +64,24 @@ export const api = {
   /** DELETE /api/files/{path} — delete a file */
   deleteFile: (path) => request('DELETE', `/files/${encodePath(path)}`),
 
+  /** DELETE /api/dirs/{path} — recursively delete a directory */
+  deleteDir: (path) => request('DELETE', `/dirs/${encodePath(path)}`),
+
+  /** POST /api/files/rename — rename or move a file or directory */
+  renameFile: (from, to) => request('POST', '/files/rename', { from, to }),
+
   /** GET /api/search?q= — full-text search across the vault */
   search: (q) => request('GET', `/search?q=${encodeURIComponent(q)}`).then(r => r.json()),
 
+  /** POST /api/auth/session — exchange API key for a short-lived image session token */
+  createSession: () => request('POST', '/auth/session').then(r => r.json()),
+
+  /** POST /api/ui-config — update mutable UI settings (partial patch) */
+  postUiConfig: (patch) => request('POST', '/ui-config', patch).then(r => r.json()),
+
   /** GET /api/ui-config — public, returns accent color + default theme */
   uiConfig: () => fetch('/api/ui-config').then(r => r.json()),
+
+  /** GET /api/checksum/{path} — fast single-file change detection (checksum + modified) */
+  fileChecksum: (path) => request('GET', `/checksum/${encodePath(path)}`).then(r => r.json()),
 }

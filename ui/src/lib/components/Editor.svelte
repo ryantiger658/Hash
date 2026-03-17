@@ -45,6 +45,63 @@
     scheduleAutoSave()
   }
 
+  // Auto-continue list markers when pressing Enter inside a list item.
+  // Patterns matched (after optional leading spaces):
+  //   - [ ]  - [x]  task lists
+  //   -  *  +       unordered
+  //   1.  2.  …     ordered
+  const LIST_RE = /^(\s*)([-*+] \[[ x]\] |[-*+] |\d+\. )/
+
+  function onKeydown(e) {
+    if (e.key !== 'Enter' || e.isComposing) return
+
+    const el = rawEl
+    const val = el.value
+    const pos = el.selectionStart
+
+    // Find start of the current line
+    const lineStart = val.lastIndexOf('\n', pos - 1) + 1
+    const line = val.slice(lineStart, pos)
+
+    const m = LIST_RE.exec(line)
+    if (!m) return
+
+    e.preventDefault()
+
+    const indent = m[1]
+    const marker = m[2]
+
+    // The content after the marker up to the cursor
+    const afterMarker = line.slice(indent.length + marker.length)
+
+    if (afterMarker.trim() === '') {
+      // Empty item — exit the list by removing the marker
+      const newVal = val.slice(0, lineStart) + indent + val.slice(pos)
+      el.value = newVal
+      const newPos = lineStart + indent.length
+      el.setSelectionRange(newPos, newPos)
+    } else {
+      // Compute next marker
+      let nextMarker = marker
+      const orderedM = /^(\d+)\. $/.exec(marker)
+      if (orderedM) {
+        nextMarker = `${parseInt(orderedM[1], 10) + 1}. `
+      } else if (/^\s*[-*+] \[[ x]\] $/.test(indent + marker)) {
+        // Task list: always continue with unchecked
+        nextMarker = marker.replace(/\[[ x]\]/, '[ ]')
+      }
+
+      const insert = '\n' + indent + nextMarker
+      const newVal = val.slice(0, pos) + insert + val.slice(el.selectionEnd)
+      el.value = newVal
+      const newPos = pos + insert.length
+      el.setSelectionRange(newPos, newPos)
+    }
+
+    fileContent.set(el.value)
+    scheduleAutoSave()
+  }
+
   function onWikiLink(e) {
     dispatch('wikilink', e.detail)
   }
@@ -88,6 +145,7 @@
           class:full={mode === 'edit'}
           value={$fileContent}
           on:input={onInput}
+          on:keydown={onKeydown}
           on:scroll={onRawScroll}
           spellcheck={$spellCheck}
           placeholder="Start writing…"

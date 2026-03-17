@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v0.6** — M0 and M1 complete; v0.0.3 release candidate; M2 (Sync Protocol) is next
+> Status: **v0.7** — M0 and M1 complete; v0.0.3 shipped; v0.0.4 in progress (M2 + image rendering + settings + file rename)
 
 ---
 
@@ -69,7 +69,7 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - Docker named volume seeds welcome content on first run
 - Chainguard base images (near-zero CVE)
 
-### Web Interface ✅ M1 + v0.0.3
+### Web Interface ✅ M1 + v0.0.3 / 🔧 v0.0.4
 
 - Browse the document repository (folder tree + file list); empty directories visible
 - Read markdown with rendered preview
@@ -89,18 +89,26 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - File metadata footer (created date, last updated) rendered below each note
 - Hidden files and directories (dotfiles) hidden by default; controllable via `show_hidden_files` config
 - Login gate (API key); key stored in browser `localStorage`
+- Rename files inline from the file tree (`v0.0.4`)
+- Image rendering: vault assets served via `/api/vault-asset/*`; relative paths in `![alt](path)` resolved against the note's directory (`v0.0.4`)
+- Auto-continue lists: Enter inside a list item inserts the next marker; Enter on an empty item exits the list (`v0.0.4`)
+- In-app settings panel: toggle line numbers, spell check, editor labels, accent color, theme; persisted server-side in `.mdkb/ui-settings.toml` (`v0.0.4`)
+- `⌘B` / `Ctrl+B` keyboard shortcut to toggle sidebar
 
-### Sync API ✅ M1 (foundation)
+### Sync API ✅ M1 (foundation) / 🔧 M2 (v0.0.4)
 
-- `GET /api/sync/snapshot` — returns full file list with checksums and timestamps
-- `POST /api/sync/push` — accepts upserts (base64 content) and deletes; reports rejections
-- Delta sync fields (`modified`, `checksum`) in place; full protocol deferred to M2
+- `GET /api/sync/snapshot` — returns full file list with checksums, timestamps, and server clock
+- `POST /api/sync/push` — accepts upserts (base64 content + last-synced metadata) and deletes; reports accepted, rejected, and conflicted items separately
+- Conflict detection: a conflict is declared when the server file was modified since the client's last sync AND the checksums differ; server returns its current content so the client can present a diff
+- Per-file sync metadata stored in `.mdkb/sync/<path>.toml` (last synced checksum + timestamp)
+- Conflict resolution: client re-pushes the chosen version after user resolves; server accepts as a normal upsert
 
 ### Security
 
 - Bearer token auth on all protected routes; public route for UI config (`/api/ui-config`)
 - API key configured via `config.toml` or `HASH_API_KEY` env var
 - Path traversal protection (vault root canonicalization + normalize)
+- Vault asset serving (`/api/vault-asset/*`) uses a short-lived in-memory session token (UUID, not the API key) so image URLs are safe to log
 - HTTPS recommended via reverse proxy (Traefik, nginx); built-in TLS deferred
 - CVE scanning with Grype in CI; Chainguard images in production
 
@@ -140,6 +148,8 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 | `ui.show_hidden_files` | `HASH_SHOW_HIDDEN_FILES` | `false` | `true` to show dotfiles in the file tree |
 | `ui.line_numbers` | `HASH_LINE_NUMBERS` | `false` | `true` to show line numbers in the editor |
 | `ui.spell_check` | `HASH_SPELL_CHECK` | `false` | `true` to enable browser spell-check in the editor |
+
+> **Runtime overrides:** The in-app settings panel writes mutable UI settings (`secondary_color`, `default_theme`, `editor_labels`, `line_numbers`, `spell_check`) to `.mdkb/ui-settings.toml`. Values in this file take precedence over `config.toml`/env vars. `show_hidden_files` is static and requires a server restart to change.
 
 ---
 
@@ -275,7 +285,7 @@ vault/
 |---|---|---|
 | M0 — Foundations | Repo setup, Docker scaffold, basic API | ✅ Complete |
 | M1 — Web UI | Read/edit markdown, folder tree, search, journal, Docker | ✅ Complete |
-| M2 — Sync Protocol | Delta sync, version tracking, conflict detection | 🔲 Next |
+| M2 — Sync Protocol | Delta sync, version tracking, conflict detection | 🔧 v0.0.4 |
 | M3 — Desktop Client (Sync) | Background sync agent, offline queue, auto-reconnect | 🔲 Planned |
 | M4 — Desktop Client (Editor) | Offline viewer + editor | 🔲 Planned |
 
@@ -291,10 +301,7 @@ Requests collected from early users — not yet scheduled for implementation:
 | MermaidJS diagrams | Render `mermaid` fenced code blocks as flowcharts, sequence diagrams, etc. |
 | MARP slide decks | Render MARP-formatted markdown as presentation slides in-browser |
 | Focus mode | Distraction-free writing view: hide sidebar and chrome; toggled via keyboard shortcut |
-| Auto-continue lists | When pressing Enter inside a list item, automatically insert the next list marker (`-`, `1.`, `- [ ]`) |
 | Version update notification | Check for new releases and show a badge/prompt when a newer version is available |
-| Configure page | In-app UI to edit `config.toml` fields (accent color, theme, vault path, API key rotation) with field descriptions and live preview |
-| Image rendering | Render images stored in the vault directory; serve vault assets via `/api/files/*`; resolve relative paths in `![alt](path)` syntax |
 | Tag browser | Filter and browse notes by tag; sidebar panel or search integration |
 | Vault symlinks | Symlink files or directories from outside the vault into it (e.g. `vault/hash/ -> project docs`); requires WalkDir to preserve symlink-relative paths while reading through to target content |
 | Vim keybindings | Optional vim modal editing (normal/insert/visual) in the editor pane; controlled via `vim_mode` config flag |
@@ -324,3 +331,4 @@ Requests collected from early users — not yet scheduled for implementation:
 | 0.5 | 2026-03-15 | M0 and M1 complete; feature backlog added |
 | 0.6 | 2026-03-16 | v0.0.3 RC: YAML frontmatter, journal button, hidden files config, line numbers, floating mode panel, search ranking, save dot, light mode contrast; backlog updated |
 | 0.7 | 2026-03-16 | Note Format Specification and Backwards Compatibility Policy added; vault schema versioning and migration runner added (schema v1); spell-check config added |
+| 0.8 | 2026-03-16 | v0.0.4 scope defined: M2 sync protocol, image rendering (session token auth), settings panel, file rename, auto-continue lists, folder delete bug fix |

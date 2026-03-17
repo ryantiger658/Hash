@@ -44,6 +44,7 @@ help:
 	@echo "  Test & Lint"
 	@echo "    ci               Run all CI checks locally (fmt, clippy, test, ui build)"
 	@echo "    test             Run all Rust tests"
+	@echo "    e2e              Run Playwright E2E tests (requires running server)"
 	@echo "    lint             Run clippy + rustfmt check"
 	@echo "    fmt              Auto-format all Rust code"
 	@echo "    check            Fast compile check (no binary output)"
@@ -151,16 +152,39 @@ build-docker:
 
 # Run every check the CI pipeline runs, in the same order.
 # All checks must pass before tagging a release or pushing to main.
+#
+# E2E tests build the release binary, start an ephemeral server on port 3539
+# (avoids colliding with the dev server on 3535), and run Playwright against it.
+# Override the test API key with: E2E_API_KEY=mykey make ci
+E2E_API_KEY  ?= e2e-ci-test-key
+E2E_PORT     := 3539
+
 .PHONY: ci
 ci:
-	@echo "  [1/4] cargo fmt --check"
+	@echo "  [1/5] cargo fmt --check"
 	@~/.cargo/bin/cargo fmt --check
-	@echo "  [2/4] cargo clippy"
+	@echo "  [2/5] cargo clippy"
 	@~/.cargo/bin/cargo clippy -- -D warnings
-	@echo "  [3/4] cargo test"
+	@echo "  [3/5] cargo test"
 	@~/.cargo/bin/cargo test
-	@echo "  [4/4] ui build"
+	@echo "  [4/5] ui build"
 	@cd ui && BUILD_TARGET=server npm run build
+	@echo "  [5/5] e2e tests"
+	@~/.cargo/bin/cargo build --release -p hash-server 2>/dev/null
+	@E2E_VAULT=$$(mktemp -d); \
+	  (cd server && exec env HASH_CONFIG= HASH_API_KEY=$(E2E_API_KEY) \
+	    HASH_VAULT_PATH=$$E2E_VAULT HASH_PORT=$(E2E_PORT) \
+	    ../target/release/hash-server > /tmp/hash-e2e-server.log 2>&1) & \
+	  SERVER_PID=$$!; \
+	  for i in $$(seq 1 30); do \
+	    curl -sf http://localhost:$(E2E_PORT) > /dev/null 2>&1 && break || sleep 0.5; \
+	  done; \
+	  (cd e2e && npm install --silent && \
+	    E2E_API_KEY=$(E2E_API_KEY) E2E_BASE_URL=http://localhost:$(E2E_PORT) npx playwright test); \
+	  STATUS=$$?; \
+	  kill $$SERVER_PID 2>/dev/null; \
+	  rm -rf $$E2E_VAULT; \
+	  exit $$STATUS
 	@echo ""
 	@echo "  All checks passed — safe to push."
 	@echo ""
@@ -168,6 +192,13 @@ ci:
 .PHONY: test
 test:
 	~/.cargo/bin/cargo test
+
+# Run Playwright E2E tests against an already-running server.
+# Set E2E_API_KEY and E2E_BASE_URL to match your running server config.
+# For a self-contained run (starts/stops the server automatically) use: make ci
+.PHONY: e2e
+e2e:
+	@cd e2e && npm install --silent && npx playwright test
 
 .PHONY: lint
 lint:

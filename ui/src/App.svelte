@@ -1,12 +1,14 @@
 <script>
   import { onMount } from 'svelte'
-  import { loadServerTheme, setTheme, getStoredTheme } from './lib/theme.js'
-  import { hasApiKey, clearApiKey } from './lib/api.js'
+  import { loadServerTheme, setTheme, activeTheme, refreshImageToken } from './lib/theme.js'
+  import { api, hasApiKey, clearApiKey } from './lib/api.js'
   import {
     fileTree, files, selectedPath, selectedFile, fileContent,
-    isDirty, saveStatus, aliasMap,
-    loadVault, selectFile, createFile, deleteFile, deleteFolder,
+    isDirty, saveStatus, aliasMap, remoteChangeAvailable, pollIntervalSecs,
+    loadVault, selectFile, createFile, deleteFile, deleteFolder, renameItem,
     saveCurrentFile, openTodayJournal,
+    startPolling, stopPolling, pollVault, acceptRemoteChange,
+    startOpenFilePoll, stopOpenFilePoll,
   } from './stores/vault.js'
   import { version } from '../package.json'
   import { get } from 'svelte/store'
@@ -15,32 +17,45 @@
   import FileTree     from './lib/components/FileTree.svelte'
   import Editor       from './lib/components/Editor.svelte'
   import SearchBar    from './lib/components/SearchBar.svelte'
-  import NewItemModal from './lib/components/NewItemModal.svelte'
+  import NewItemModal    from './lib/components/NewItemModal.svelte'
+  import SettingsPanel   from './lib/components/SettingsPanel.svelte'
 
   // ── Auth state ───────────────────────────────────────────────────────────
   let authenticated = hasApiKey()
 
   async function onLogin() {
     authenticated = true
+    refreshImageToken()
+    const cfg = await loadServerTheme()
+    const pollMs = (cfg?.poll_interval_secs ?? 10) * 1000
+    pollIntervalSecs.set(cfg?.poll_interval_secs ?? 10)
     await loadVault()
     await openTodayJournal()
+    startPolling(pollMs)
   }
 
   function logout() {
+    stopPolling()
+    stopOpenFilePoll()
     clearApiKey()
     authenticated = false
     selectedPath.set(null)
     fileContent.set('')
   }
 
+  function onPollIntervalChange(e) {
+    stopPolling()
+    startPolling(e.detail.secs * 1000)
+  }
+
   // ── Theme ────────────────────────────────────────────────────────────────
-  let currentTheme = getStoredTheme()
   const themeOrder = ['light', 'dark', 'system']
 
   function cycleTheme() {
-    const next = themeOrder[(themeOrder.indexOf(currentTheme) + 1) % themeOrder.length]
-    currentTheme = next
+    const next = themeOrder[(themeOrder.indexOf($activeTheme) + 1) % themeOrder.length]
     setTheme(next)
+    // Persist to server so the setting survives page reload.
+    if (authenticated) api.postUiConfig({ default_theme: next }).catch(() => {})
   }
 
   // ── Editor mode ──────────────────────────────────────────────────────────
@@ -60,8 +75,13 @@
     return s
   })()
 
-  // ── New note modal ───────────────────────────────────────────────────────
-  let showNewModal = false
+  // ── Modals ───────────────────────────────────────────────────────────────
+  let showNewModal    = false
+  let showSettings = false
+
+  function openSettings() {
+    showSettings = true
+  }
 
   async function handleCreate(e) {
     await createFile(e.detail)
@@ -80,6 +100,10 @@
 
   async function handleDeleteFolder(e) {
     await deleteFolder(e.detail)
+  }
+
+  async function handleRename(e) {
+    await renameItem(e.detail.from, e.detail.to)
   }
 
   // Resolve a wiki-link: check aliases first, then match by path/name
@@ -122,13 +146,55 @@
         sidebarCollapsed = !sidebarCollapsed
       }
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      e.preventDefault()
+      showSettings = true
+    }
   }
 
-  onMount(async () => {
-    loadServerTheme()
-    if (authenticated) {
-      await loadVault()
-      await openTodayJournal()
+  // Restart the open-file fast poll whenever the selected file changes.
+  $: {
+    stopOpenFilePoll()
+    if ($selectedPath && authenticated) startOpenFilePoll()
+  }
+
+  onMount(() => {
+    loadServerTheme().then(cfg => {
+      const pollMs = (cfg?.poll_interval_secs ?? 10) * 1000
+      pollIntervalSecs.set(cfg?.poll_interval_secs ?? 10)
+      if (authenticated) {
+        refreshImageToken()
+        loadVault().then(openTodayJournal).then(() => startPolling(pollMs))
+      }
+    })
+
+    // Poll when the page becomes active again. Two complementary events:
+    //   visibilitychange → fires when switching browser tabs (tab goes hidden → visible)
+    //   window focus     → fires when the OS window regains focus (e.g. PWA → browser, or
+    //                       browser minimised then restored)
+    //
+    // Use hasApiKey() at call-time rather than the closure-captured `authenticated`
+    // variable — Svelte's reactive invalidation can mean the closure sees a stale value.
+    // Debounce so both events firing together (e.g. restoring a minimised window) only
+    // triggers one poll.
+    let focusPollTimer = null
+    function scheduleFocusPoll() {
+      if (!hasApiKey()) return
+      clearTimeout(focusPollTimer)
+      focusPollTimer = setTimeout(pollVault, 100)
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') scheduleFocusPoll()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', scheduleFocusPoll)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', scheduleFocusPoll)
+      clearTimeout(focusPollTimer)
     }
   })
 </script>
@@ -146,8 +212,8 @@
       <SearchBar on:select={handleSelect} />
 
       <nav class="header-actions">
-        <button class="icon-btn theme-btn" on:click={cycleTheme} title="Theme: {currentTheme}">
-          {#if currentTheme === 'light'}
+        <button class="icon-btn theme-btn" on:click={cycleTheme} title="Theme: {$activeTheme}">
+          {#if $activeTheme === 'light'}
             <!-- Sun -->
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="8" cy="8" r="2.5"/>
@@ -160,7 +226,7 @@
               <line x1="12.95" y1="3.05" x2="11.54" y2="4.46"/>
               <line x1="4.46" y1="11.54" x2="3.05" y2="12.95"/>
             </svg>
-          {:else if currentTheme === 'dark'}
+          {:else if $activeTheme === 'dark'}
             <!-- Moon — filled crescent -->
             <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" stroke="none">
               <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
@@ -237,11 +303,16 @@
         </div>
 
         <div class="tree-scroll">
-          <FileTree nodes={$fileTree} {openPaths} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} />
+          <FileTree nodes={$fileTree} {openPaths} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} on:rename={handleRename} />
         </div>
 
         <div class="sidebar-footer">
-          <span class="app-version">v{version}</span>
+          <button class="icon-btn muted sidebar-settings-btn" on:click={openSettings} title="Settings">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
+            </svg>
+          </button>
+          <a href="https://github.com/ryantiger658/Hash/releases/tag/v{version}" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link app-version" title="Release notes for v{version}">v{version}</a>
           <a href="https://github.com/ryantiger658/Hash" target="_blank" rel="noopener noreferrer" class="sidebar-meta-link" title="View on GitHub">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
@@ -288,6 +359,13 @@
 
       <!-- Main content -->
       <main class="main">
+        {#if $remoteChangeAvailable}
+          <div class="remote-change-banner">
+            <span>This file was updated on the server.</span>
+            <button class="banner-btn" on:click={acceptRemoteChange}>Reload</button>
+            <button class="banner-dismiss" on:click={() => remoteChangeAvailable.set(false)} title="Dismiss">✕</button>
+          </div>
+        {/if}
         {#if $selectedPath}
           <Editor file={$selectedFile} bind:mode={editorMode} on:wikilink={handleWikiLink} />
         {:else}
@@ -302,6 +380,10 @@
   </div>
 
   <NewItemModal bind:show={showNewModal} on:create={handleCreate} />
+
+  {#if showSettings}
+    <SettingsPanel on:close={() => (showSettings = false)} on:poll-interval-change={onPollIntervalChange} />
+  {/if}
 {/if}
 
 <style>
@@ -530,8 +612,12 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
     gap: 0.5rem;
+  }
+
+  .sidebar-settings-btn {
+    padding: 0.15rem 0.25rem;
+    margin-right: auto;
   }
 
   .sidebar-meta-link {
@@ -565,6 +651,44 @@
     flex-direction: column;
     overflow: hidden;
   }
+
+  /* ── Remote-change conflict banner ───────────────────────────────────── */
+  .remote-change-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 1rem;
+    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .banner-btn {
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
+    font-family: inherit;
+    background: var(--color-accent);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    margin-left: 0.25rem;
+  }
+
+  .banner-dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+  }
+  .banner-dismiss:hover { background: var(--color-border); color: var(--color-text); }
 
   /* ── Empty state ─────────────────────────────────────────────────────── */
   .empty-state {

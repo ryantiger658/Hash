@@ -52,7 +52,7 @@ Use `#` through `######` for six levels of headings.
 ### Task lists
 
 - [x] Create your first note
-- [x] Explore the file tree
+- [ ] Explore the file tree
 - [ ] Customize your accent color
 - [ ] Set up your journal folder
 
@@ -197,11 +197,37 @@ book-notes-dune.md     ← tags: [reading]
 
 ---
 
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `⌘S` / `Ctrl+S` | Save current file |
+| `⌘N` / `Ctrl+N` | New note |
+| `⌘B` / `Ctrl+B` | Toggle sidebar |
+| `⌘,` / `Ctrl+,` | Open Settings panel |
+| `Escape` | Close modal or Settings panel |
+
+**In the editor:**
+
+| Shortcut | Action |
+|---|---|
+| `Enter` after `- item` | Continue list with `- ` |
+| `Enter` after `* item` | Continue list with `* ` |
+| `Enter` after `1. item` | Continue with `2.` (auto-increments) |
+| `Enter` after `- [ ] task` | Continue with `- [ ] ` (new unchecked item) |
+| `Enter` on empty list item | Exit the list |
+
+> **Tip:** Click any checkbox in the Preview pane to toggle it directly — the source updates automatically.
+
+---
+
 ## Theming
 
-Click the theme icon in the top-right corner to cycle between **light**, **dark**, and **system**.
+Click the **theme icon** in the header to cycle between **Light**, **Dark**, and **System**.
 
-To change the accent color, edit `config.toml` on the server:
+Open the **Settings panel** (`⌘,` / `Ctrl+,`) to change the accent color live without a restart. Settings are saved automatically.
+
+You can also set defaults in `config.toml` on the server:
 
 ```toml
 [ui]

@@ -41,11 +41,6 @@ secondary_color = "#aaff00"
 # Users can override this in the UI; their preference is stored in the browser.
 default_theme = "system"
 
-# Show text labels on the editor mode buttons (Edit / Split / Preview).
-# Defaults to false (icon-only). Set to true to restore text labels.
-# Can also be set via HASH_EDITOR_LABELS=true environment variable.
-editor_labels = false
-
 # Show files and directories whose names begin with '.' in the file tree.
 # Useful for revealing hidden attachment folders in the future.
 # Can also be set via HASH_SHOW_HIDDEN_FILES=true.

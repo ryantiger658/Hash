@@ -10,5 +10,3 @@ services:
     environment:
       HASH_API_KEY: "change-me-before-deploying"
       HASH_VAULT_PATH: /vault
-      HASH_SPELL_CHECK: true
-      HASH_LINE_NUMBERS: true

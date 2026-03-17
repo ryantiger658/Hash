@@ -5,13 +5,30 @@ pub mod sync;
 pub mod vault;
 
 use anyhow::Result;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, RwLock},
+    time::Instant,
+};
 use tracing::info;
+
+/// TTL for image session tokens: 24 hours.
+pub const SESSION_TOKEN_TTL_SECS: u64 = 86_400;
+
+/// In-memory store of short-lived session tokens used for vault-asset image auth.
+/// Keys are opaque UUIDs; values are the time the token was issued.
+/// The actual API key never appears in image URLs — only the token does.
+pub type TokenStore = Arc<Mutex<HashMap<String, Instant>>>;
 
 /// Shared application state passed to all Axum route handlers.
 pub struct AppState {
     pub config: config::Config,
     pub vault: vault::Vault,
+    /// Mutable UI settings, initially loaded from .mdkb/ui-settings.toml and
+    /// overrideable at runtime via POST /api/ui-config.
+    pub ui_settings: Arc<RwLock<config::UiSettings>>,
+    /// Session tokens for vault-asset image serving (see `POST /api/auth/session`).
+    pub tokens: TokenStore,
 }
 
 /// Start the server. Called by main.rs.
@@ -33,7 +50,14 @@ pub async fn run() -> Result<()> {
         tracing::warn!("Vault migration did not complete cleanly: {e}");
     }
 
-    let state = Arc::new(AppState { config, vault });
+    let ui_settings = config::UiSettings::load_from_vault(&vault, &config.ui);
+    let tokens: TokenStore = Arc::new(Mutex::new(HashMap::new()));
+    let state = Arc::new(AppState {
+        config,
+        vault,
+        ui_settings: Arc::new(RwLock::new(ui_settings)),
+        tokens,
+    });
     let app = routes::build_router(state.clone());
 
     let bind_addr = format!("{}:{}", state.config.server.host, state.config.server.port);

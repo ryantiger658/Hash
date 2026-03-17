@@ -35,10 +35,13 @@ pub async fn search(
         return Ok(Json(vec![]));
     }
 
-    let files = state.vault.list_files().map_err(|e| {
-        tracing::error!("search list_files error: {e}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let files = state
+        .vault
+        .list_files(crate::vault::DEFAULT_LARGE_FILE_THRESHOLD)
+        .map_err(|e| {
+            tracing::error!("search list_files error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     // Collect filename matches first (higher relevance), then content-only matches.
     let mut filename_results: Vec<SearchResult> = Vec::new();

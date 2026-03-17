@@ -3,8 +3,8 @@
  * Holds the file list, selected file, editor content, and save status.
  */
 import { writable, derived, get } from 'svelte/store'
-import { api, AuthError } from '../lib/api.js'
-import { parseFrontmatter, normalizeTags, normalizeArray } from '../lib/frontmatter.js'
+import { api } from '../lib/api.js'
+import { parseFrontmatter, normalizeArray } from '../lib/frontmatter.js'
 
 // ── Raw stores ────────────────────────────────────────────────────────────────
 
@@ -14,6 +14,19 @@ export const fileContent = writable('')     // current editor content
 export const savedContent = writable('')    // content as last saved to server
 export const isLoading = writable(false)
 export const saveStatus = writable('idle')  // 'idle' | 'saving' | 'saved' | 'error'
+
+/**
+ * Active poll interval in seconds. Updated from server config on login and
+ * whenever the user changes it in the settings panel. App.svelte watches this
+ * reactively to restart the polling timer with the correct interval.
+ */
+export const pollIntervalSecs = writable(10)
+
+/**
+ * True when the currently open file has been modified on the server while the
+ * editor has unsaved local changes. Cleared on reload or discard.
+ */
+export const remoteChangeAvailable = writable(false)
 
 /**
  * Maps alias (lowercase) → vault path.
@@ -120,13 +133,12 @@ export async function createFile(path) {
 }
 
 /**
- * Delete every file whose path starts with `folderPath/`.
+ * Recursively delete a folder and all its contents.
  * Clears the editor if the open file was inside the folder.
  */
 export async function deleteFolder(folderPath) {
   const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
-  const toDelete = get(files).filter(f => f.path.startsWith(prefix))
-  await Promise.all(toDelete.map(f => api.deleteFile(f.path)))
+  await api.deleteDir(folderPath)
   if (get(selectedPath)?.startsWith(prefix)) {
     selectedPath.set(null)
     fileContent.set('')
@@ -145,6 +157,24 @@ export async function deleteFile(path) {
     savedContent.set('')
   }
   await loadVault()
+}
+
+/**
+ * Rename a file or folder. If the renamed file was open, re-opens it at the new path.
+ */
+export async function renameItem(fromPath, toPath) {
+  const wasOpen = get(selectedPath) === fromPath
+  await api.renameFile(fromPath, toPath)
+  if (wasOpen) {
+    selectedPath.set(null)
+    fileContent.set('')
+    savedContent.set('')
+  }
+  await loadVault()
+  if (wasOpen) {
+    const newFile = get(files).find(f => f.path === toPath)
+    if (newFile && !newFile.isDir) await selectFile(toPath)
+  }
 }
 
 /** Delete a file. Clears the editor if the deleted file was open. */
@@ -174,6 +204,144 @@ export async function saveCurrentFile() {
     console.error('Save failed', e)
     saveStatus.set('error')
     setTimeout(() => saveStatus.set('idle'), 3000)
+  }
+}
+
+// ── Background polling ────────────────────────────────────────────────────────
+
+let pollTimer = null
+
+/**
+ * Compare the server's file list against the local store.
+ * - Updates the sidebar if any entries changed.
+ * - Silently reloads the open file if its checksum changed and there are no
+ *   unsaved edits.
+ * - Sets remoteChangeAvailable if the open file changed while the editor is
+ *   dirty (so the user can choose to reload or keep their edits).
+ */
+export async function pollVault() {
+  try {
+    const result = await api.listFiles()
+    const newFiles = Array.isArray(result) ? result : []
+    const current = get(files)
+
+    const currentMap = new Map(current.map(f => [f.path, f.checksum]))
+    const newMap = new Map(newFiles.map(f => [f.path, f.checksum]))
+
+    // Cheap early exit — nothing changed at all.
+    const listChanged =
+      newFiles.length !== current.length ||
+      newFiles.some(f => currentMap.get(f.path) !== f.checksum) ||
+      current.some(f => !newMap.has(f.path))
+
+    if (!listChanged) return
+
+    files.set(newFiles)
+
+    const openPath = get(selectedPath)
+    if (!openPath) return
+
+    const oldChecksum = currentMap.get(openPath)
+    const newChecksum = newMap.get(openPath)
+
+    // Open file unchanged — nothing more to do.
+    if (oldChecksum === newChecksum) return
+
+    if (newChecksum === undefined) {
+      // File was deleted on the server — clear the editor.
+      selectedPath.set(null)
+      fileContent.set('')
+      savedContent.set('')
+      remoteChangeAvailable.set(false)
+      return
+    }
+
+    if (get(isDirty)) {
+      // Unsaved local changes conflict with the remote update — let the user decide.
+      remoteChangeAvailable.set(true)
+    } else {
+      // No local changes — reload silently.
+      const text = await api.getFile(openPath)
+      fileContent.set(text)
+      savedContent.set(text)
+      remoteChangeAvailable.set(false)
+    }
+  } catch {
+    // Network error or 401 — non-fatal, skip this poll cycle.
+  }
+}
+
+/** Reload the open file from the server, discarding any unsaved local changes. */
+export async function acceptRemoteChange() {
+  const path = get(selectedPath)
+  if (!path) return
+  const text = await api.getFile(path)
+  fileContent.set(text)
+  savedContent.set(text)
+  remoteChangeAvailable.set(false)
+}
+
+/** Start polling the vault every `intervalMs` milliseconds. */
+export function startPolling(intervalMs = 10_000) {
+  stopPolling()
+  pollTimer = setInterval(pollVault, intervalMs)
+}
+
+/** Stop background polling. */
+export function stopPolling() {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+// ── Open-file fast poll ───────────────────────────────────────────────────────
+
+let openFilePollTimer = null
+
+/**
+ * Check only the currently open file against the server.
+ * Uses the lightweight `/api/checksum/*path` endpoint — no full vault scan.
+ * Updates the files store entry so the next full pollVault() sees it as fresh.
+ */
+export async function pollOpenFile() {
+  const path = get(selectedPath)
+  if (!path) return
+  try {
+    const { checksum: newChecksum, modified: newModified } = await api.fileChecksum(path)
+    const current = get(files)
+    const entry = current.find(f => f.path === path)
+    if (!entry || entry.checksum === newChecksum) return
+
+    // Update the store so the next full poll doesn't double-trigger.
+    files.update(list =>
+      list.map(f => (f.path === path ? { ...f, checksum: newChecksum, modified: newModified } : f))
+    )
+
+    if (get(isDirty)) {
+      remoteChangeAvailable.set(true)
+    } else {
+      const text = await api.getFile(path)
+      fileContent.set(text)
+      savedContent.set(text)
+      remoteChangeAvailable.set(false)
+    }
+  } catch {
+    // Non-fatal.
+  }
+}
+
+/** Start a fast per-open-file poll at `intervalMs` (default 2 s). */
+export function startOpenFilePoll(intervalMs = 2_000) {
+  stopOpenFilePoll()
+  openFilePollTimer = setInterval(pollOpenFile, intervalMs)
+}
+
+/** Stop the open-file poll. */
+export function stopOpenFilePoll() {
+  if (openFilePollTimer != null) {
+    clearInterval(openFilePollTimer)
+    openFilePollTimer = null
   }
 }
 
