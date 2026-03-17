@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { loadServerTheme, setTheme, activeTheme, refreshImageToken } from './lib/theme.js'
-  import { api, hasApiKey, clearApiKey } from './lib/api.js'
+  import { api, hasApiKey, clearApiKey, clearServerUrl, getServerUrl } from './lib/api.js'
   import {
     fileTree, files, selectedPath, selectedFile, fileContent,
     isDirty, saveStatus, aliasMap, remoteChangeAvailable, pollIntervalSecs,
@@ -22,7 +22,10 @@
   import SettingsPanel   from './lib/components/SettingsPanel.svelte'
 
   // ── Auth state ───────────────────────────────────────────────────────────
-  let authenticated = hasApiKey()
+  // In desktop mode a server URL is also required — without it all API calls
+  // would fall through to relative paths (which go nowhere in a Tauri webview).
+  const isDesktop = typeof window !== 'undefined' && !!window.__TAURI__
+  let authenticated = hasApiKey() && (!isDesktop || !!getServerUrl())
 
   async function onLogin() {
     authenticated = true
@@ -39,6 +42,7 @@
     stopPolling()
     stopOpenFilePoll()
     clearApiKey()
+    clearServerUrl()
     authenticated = false
     selectedPath.set(null)
     fileContent.set('')

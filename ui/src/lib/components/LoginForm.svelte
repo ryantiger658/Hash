@@ -1,33 +1,44 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte'
-  import { saveApiKey } from '../api.js'
+  import { saveApiKey, saveServerUrl, getServerUrl } from '../api.js'
 
   const dispatch = createEventDispatcher()
 
+  // In the Tauri desktop app window.__TAURI__ is defined — we need the user to
+  // supply the server URL because the webview can't use relative /api/... paths.
+  const isDesktop = typeof window !== 'undefined' && !!window.__TAURI__
+
+  let serverUrl = getServerUrl()
   let apiKey = ''
   let error = ''
   let loading = false
   let inputEl
 
-  onMount(() => inputEl?.focus())
+  onMount(async () => {
+    // Pre-fill server URL from sync config if not already stored
+    if (isDesktop && !serverUrl) {
+      try {
+        const cfg = await window.__TAURI__.core.invoke('get_config')
+        if (cfg?.server_url) serverUrl = cfg.server_url
+      } catch { /* no config yet */ }
+    }
+    inputEl?.focus()
+  })
 
   async function submit() {
     error = ''
-    if (!apiKey.trim()) {
-      error = 'Please enter your API key.'
-      return
-    }
+    if (!apiKey.trim()) { error = 'Please enter your API key.'; return }
+    if (isDesktop && !serverUrl.trim()) { error = 'Please enter your server URL.'; return }
+
     loading = true
     try {
-      // Test the key against a real API endpoint
-      const res = await fetch('/api/files', {
+      const base = isDesktop ? serverUrl.trim().replace(/\/+$/, '') : ''
+      const res = await fetch(`${base}/api/files`, {
         headers: { Authorization: `Bearer ${apiKey.trim()}` },
       })
-      if (res.status === 401) {
-        error = 'Invalid API key.'
-        return
-      }
+      if (res.status === 401) { error = 'Invalid API key.'; return }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (isDesktop) saveServerUrl(serverUrl)
       saveApiKey(apiKey)
       dispatch('login')
     } catch (e) {
@@ -42,6 +53,17 @@
   <form class="login-card" on:submit|preventDefault={submit}>
     <h1 class="logo">#ash</h1>
     <p class="tagline">Self-hosted markdown knowledge base</p>
+
+    {#if isDesktop}
+      <label for="serverurl">Server URL</label>
+      <input
+        id="serverurl"
+        type="url"
+        bind:value={serverUrl}
+        placeholder="http://192.168.1.100:3535"
+        autocomplete="url"
+      />
+    {/if}
 
     <label for="apikey">API Key</label>
     <input

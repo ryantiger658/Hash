@@ -4,6 +4,62 @@ All notable changes to #ash are documented here. Versions follow [Semantic Versi
 
 ---
 
+## [v0.0.8] — 2026-03-17
+
+### Improvements
+
+- **App icon redesign** — New squircle icon (macOS native shape) with dark `#0d0d0d` background and bold `#aaff00` Hack font hash symbol. Updated across desktop (`.png`, `.ico`, `.icns`) and all web favicons/PWA icons.
+- **macOS icon fix** — Added `icon.icns` so macOS renders the dock icon natively instead of stretching a PNG. Resolved 16-bit depth crash by generating all icons at 8-bit.
+
+
+
+### Bug Fixes
+
+- **Desktop: remote server data not loading** — The app skipped the login screen when an API key was cached from a previous session, falling back to relative API paths that hit the local dev server instead of the configured remote. Fixed by requiring a stored server URL in addition to an API key before bypassing the login screen in desktop mode.
+
+---
+
+## [v0.0.7] — 2026-03-17
+
+### Bug Fixes
+
+- **Desktop: notes not loading** — The desktop app webview loads the UI from the app bundle, so relative `/api/...` calls went nowhere. Fixed by storing the server URL in `localStorage` and prepending it to all API requests when running inside Tauri.
+- **Desktop login: Server URL field** — The login form now shows a Server URL field when running in the desktop app. It pre-fills from the sync config if one is already set.
+
+### Improvements
+
+- **Sync icon → server icon** — The sidebar sync indicator now uses a server icon instead of sync arrows, making its purpose clearer.
+- **Sync config always accessible** — Clicking the server icon always opens the config modal, even when the sync status is green. A "Sync Now" button is shown inside the modal when already configured.
+- **Windows installer** — Fixed Windows desktop build: added `icons/icon.ico` required by Tauri's Windows resource compiler.
+- **Desktop CI builds** — GitHub Actions now builds macOS (universal), Windows, and Linux desktop binaries on every version tag and uploads them as release assets.
+- **macOS Gatekeeper** — See the README for the one-time right-click workaround for unsigned builds. Notarization requires an Apple Developer account and is tracked as a future enhancement.
+
+---
+
+## [v0.0.6] — 2026-03-17
+
+### New Features
+
+- **Desktop sync engine (M3)** — Full delta-sync engine in the Tauri desktop client. A background loop fetches the server snapshot, diffs it against the local vault using SHA-256 checksums, and pushes/pulls files as needed. Conflicts (both sides changed) keep the server version and are logged for future resolution UI.
+- **Sync status indicator** — A sync dot in the sidebar footer shows real-time status: grey (not configured), green (synced), amber (pending changes), red (server unreachable). Click to open the sync config modal.
+- **Desktop sync config modal** — Enter server URL, API key, local vault path, and sync interval in-app. Settings are saved to `~/.config/hash/config.toml` and an immediate sync is triggered.
+
+---
+
+## [v0.0.5] — 2026-03-17
+
+### Bug Fixes
+
+- **413 Payload Too Large** — Increased the server's body limit from 2 MB (Axum default) to 50 MB to support PDF and large image uploads.
+- **Vault asset 404** — Added error logging to the vault-asset handler to surface path resolution failures.
+
+### New Features
+
+- **Asset upload** — Upload any file type (PDF, images, attachments) to your vault via the sidebar toolbar.
+- **Asset viewer** — Non-markdown files (PDFs, images) open in an inline viewer instead of the text editor.
+
+---
+
 ## [v0.0.4] — *In progress*
 
 ### New Features

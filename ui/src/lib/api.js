@@ -1,9 +1,15 @@
 /**
  * #ash API client.
  * All requests include the stored API key as a Bearer token.
+ *
+ * In the browser (served by Axum) all paths are relative — /api/...
+ * In the Tauri desktop app the webview loads from the app bundle, so
+ * relative paths don't reach the server.  We store the server origin in
+ * localStorage and prepend it to every request when present.
  */
 
-const API_KEY_STORAGE = 'hash-api-key'
+const API_KEY_STORAGE    = 'hash-api-key'
+const SERVER_URL_STORAGE = 'hash-server-url'
 
 export function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) ?? ''
@@ -19,6 +25,20 @@ export function clearApiKey() {
 
 export function hasApiKey() {
   return !!getApiKey()
+}
+
+/** Returns the stored server origin (e.g. "http://192.168.1.10:3535"), or '' in browser mode. */
+export function getServerUrl() {
+  return localStorage.getItem(SERVER_URL_STORAGE) ?? ''
+}
+
+export function saveServerUrl(url) {
+  // Strip trailing slash so we can always do `${base}/api/...`
+  localStorage.setItem(SERVER_URL_STORAGE, url.trim().replace(/\/+$/, ''))
+}
+
+export function clearServerUrl() {
+  localStorage.removeItem(SERVER_URL_STORAGE)
 }
 
 // Encode a vault-relative path for use in a URL.
@@ -44,7 +64,8 @@ async function request(method, path, body = null) {
     bodyToSend = JSON.stringify(body)
   }
 
-  const res = await fetch(`/api${path}`, { method, headers, body: bodyToSend })
+  const base = getServerUrl() // '' in browser, 'http://host:port' in desktop
+  const res = await fetch(`${base}/api${path}`, { method, headers, body: bodyToSend })
 
   if (res.status === 401) throw new AuthError('Invalid API key')
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
@@ -80,7 +101,7 @@ export const api = {
   postUiConfig: (patch) => request('POST', '/ui-config', patch).then(r => r.json()),
 
   /** GET /api/ui-config — public, returns accent color + default theme */
-  uiConfig: () => fetch('/api/ui-config').then(r => r.json()),
+  uiConfig: () => fetch(`${getServerUrl()}/api/ui-config`).then(r => r.json()),
 
   /** GET /api/checksum/{path} — fast single-file change detection (checksum + modified) */
   fileChecksum: (path) => request('GET', `/checksum/${encodePath(path)}`).then(r => r.json()),

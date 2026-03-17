@@ -16,23 +16,100 @@ The `#` in the name is the markdown heading character — the foundational symbo
 | Storage | Flat files | Markdown lives as plain `.md` files — no database |
 | Config | TOML | Human-readable configuration |
 
-## Quick Start (Docker)
+---
 
-```bash
-# Copy and edit the example config
-cp server/config.example.toml config.toml
+## Server Installation
 
-# Start with Docker Compose
-docker compose -f docker/docker-compose.yml up -d
+### Docker Compose (recommended)
+
+```yaml
+services:
+  hash:
+    image: ghcr.io/ryantiger658/hash:latest
+    ports:
+      - "3535:3535"
+    volumes:
+      - hash-vault:/vault
+      - ./config.toml:/app/config.toml:ro
+    restart: unless-stopped
+
+volumes:
+  hash-vault:
 ```
 
-Then open `http://localhost:3535` in your browser.
+Create a `config.toml` next to your compose file:
 
-## Desktop Client
+```toml
+[auth]
+api_key = "your-secret-key"   # change this
 
-Download the latest release for your platform (macOS, Windows, Linux) from the [Releases](../../releases) page.
+[ui]
+secondary_color = "#aaff00"   # accent color (any CSS hex)
+default_theme = "dark"        # "light", "dark", or "system"
+```
 
-On first launch, enter your server URL and API key from `config.toml`.
+Then start it:
+
+```bash
+docker compose up -d
+```
+
+Open `http://your-server:3535` in your browser and enter your API key to log in.
+
+### Portainer
+
+1. Go to **Stacks → Add stack**
+2. Paste the Docker Compose above
+3. Click **Deploy the stack**
+
+---
+
+## Desktop Client Installation
+
+Download the latest release for your platform from the [Releases](../../releases) page:
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon + Intel) | `hash_0.0.x_universal.dmg` |
+| Windows | `hash_0.0.x_x64-setup.exe` or `.msi` |
+| Linux | `hash_0.0.x_amd64.AppImage` or `.deb` |
+
+### macOS — Gatekeeper warning
+
+Because the app is not yet notarized with Apple, macOS will show:
+
+> *"hash.app" cannot be opened because Apple cannot verify it is free of malware.*
+
+**To open it anyway:**
+
+1. Right-click (or Control-click) `hash.app` → **Open**
+2. Click **Open** in the dialog that appears
+
+You only need to do this once. Subsequent launches open normally.
+
+Alternatively, remove the quarantine flag from Terminal:
+
+```bash
+xattr -cr /Applications/hash.app
+```
+
+### First launch
+
+1. Open the app — you will see the `#ash` login screen
+2. Enter your **Server URL** (e.g. `http://192.168.1.100:3535`)
+3. Enter your **API Key** from `config.toml`
+4. Click **Connect** — your notes will appear
+
+The server icon (⬜) in the sidebar footer shows sync status. Click it to configure the background sync:
+
+| Color | Meaning |
+|---|---|
+| Grey | Not configured — click to set up |
+| Green | Connected and synced |
+| Amber | Connected, changes pending |
+| Red | Server unreachable |
+
+---
 
 ## Default Port
 
@@ -48,9 +125,9 @@ secondary_color = "#6366f1"   # any valid CSS hex color
 default_theme = "dark"        # "light", "dark", or "system"
 ```
 
-## Development
+---
 
-See [docs/architecture.md](docs/architecture.md) for a full overview.
+## Development
 
 ```
 #ash/
@@ -58,7 +135,6 @@ See [docs/architecture.md](docs/architecture.md) for a full overview.
   ui/          # Svelte frontend (shared by server + desktop)
   desktop/     # Tauri v2 desktop client
   docker/      # Dockerfile + docker-compose.yml
-  docs/        # Architecture, API reference
 ```
 
 ### Prerequisites
@@ -88,6 +164,12 @@ npm run dev
 cd desktop
 npm install
 npm run tauri dev
+```
+
+### Run all tests
+
+```bash
+make ci
 ```
 
 ## License
