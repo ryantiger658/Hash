@@ -1,6 +1,7 @@
 pub mod config;
 pub mod migrations;
 pub mod routes;
+pub mod search_index;
 pub mod sync;
 pub mod vault;
 
@@ -29,6 +30,8 @@ pub struct AppState {
     pub ui_settings: Arc<RwLock<config::UiSettings>>,
     /// Session tokens for vault-asset image serving (see `POST /api/auth/session`).
     pub tokens: TokenStore,
+    /// Tantivy full-text search index.  `None` if the index failed to initialize.
+    pub search_index: Option<Arc<search_index::SearchIndex>>,
 }
 
 /// Start the server. Called by main.rs.
@@ -52,11 +55,35 @@ pub async fn run() -> Result<()> {
 
     let ui_settings = config::UiSettings::load_from_vault(&vault, &config.ui);
     let tokens: TokenStore = Arc::new(Mutex::new(HashMap::new()));
+
+    // Build or open the Tantivy search index.
+    let search_index =
+        match search_index::SearchIndex::build_or_open(std::path::Path::new(&config.vault.path)) {
+            Ok(idx) => {
+                let idx = Arc::new(idx);
+                let idx2 = idx.clone();
+                let vault_ref = vault::Vault::new(&config.vault.path, config.ui.show_hidden_files);
+                // Index all files in a background task so startup is non-blocking.
+                tokio::spawn(async move {
+                    match idx2.index_all(&vault_ref) {
+                        Ok(n) => tracing::info!("Search index ready — indexed {n} files"),
+                        Err(e) => tracing::warn!("Search index build error: {e}"),
+                    }
+                });
+                Some(idx)
+            }
+            Err(e) => {
+                tracing::warn!("Search index unavailable: {e}. Falling back to linear scan.");
+                None
+            }
+        };
+
     let state = Arc::new(AppState {
         config,
         vault,
         ui_settings: Arc::new(RwLock::new(ui_settings)),
         tokens,
+        search_index,
     });
     let app = routes::build_router(state.clone());
 

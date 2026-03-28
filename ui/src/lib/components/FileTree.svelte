@@ -35,6 +35,7 @@
   function bubbleDelete(e)     { dispatch('delete-folder', e.detail) }
   function bubbleDeleteFile(e) { dispatch('delete-file',   e.detail) }
   function bubbleRename(e)     { dispatch('rename', e.detail) }
+  function bubbleTogglePin(e)  { dispatch('toggle-pin', e.detail) }
 
   function confirmDeleteFolder(node) {
     const msg = `Delete folder "${node.name}" and all its contents? This cannot be undone.`
@@ -123,11 +124,6 @@
               </span>
               <span class="name">{node.name}</span>
             </button>
-            <button class="row-action rename-btn" title="Rename" on:click|stopPropagation={() => startRename(node)}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z"/>
-              </svg>
-            </button>
             <button class="row-action folder-delete" title="Delete folder" on:click|stopPropagation={() => confirmDeleteFolder(node)}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M2 4h12"/>
@@ -135,10 +131,15 @@
                 <path d="M3 4l1 10h8l1-10"/>
               </svg>
             </button>
+            <button class="row-action rename-btn" title="Rename" on:click|stopPropagation={() => startRename(node)}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z"/>
+              </svg>
+            </button>
           {/if}
         </div>
         {#if open[node.path]}
-          <svelte:self nodes={node.children} depth={depth + 1} {openPaths} on:select={bubble} on:delete-folder={bubbleDelete} on:delete-file={bubbleDeleteFile} on:rename={bubbleRename} />
+          <svelte:self nodes={node.children} depth={depth + 1} {openPaths} on:select={bubble} on:delete-folder={bubbleDelete} on:delete-file={bubbleDeleteFile} on:rename={bubbleRename} on:toggle-pin={bubbleTogglePin} />
         {/if}
       {:else}
         <div class="file-row-wrap" class:active={$selectedPath === node.path}>
@@ -194,16 +195,22 @@
               </span>
               <span class="name">{displayName(node.name)}</span>
             </button>
-            <button class="row-action rename-btn" title="Rename" on:click|stopPropagation={() => startRename(node)}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z"/>
-              </svg>
-            </button>
             <button class="row-action file-delete" title="Delete file" on:click|stopPropagation={() => confirmDeleteFile(node)}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M2 4h12"/>
                 <path d="M5 4V2h6v2"/>
                 <path d="M3 4l1 10h8l1-10"/>
+              </svg>
+            </button>
+            <button class="row-action rename-btn" title="Rename" on:click|stopPropagation={() => startRename(node)}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z"/>
+              </svg>
+            </button>
+            <button class="row-action pin-btn" class:pinned={node.pinned} title={node.pinned ? 'Unpin' : 'Pin'} on:click|stopPropagation={() => dispatch('toggle-pin', node.path)}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 2l1 3h3l-2.5 2 1 3L9 8.5 6.5 10l1-3L5 5h3z"/>
+                <line x1="9" y1="8.5" x2="9" y2="14"/>
               </svg>
             </button>
           {/if}
@@ -272,6 +279,16 @@
   .folder-delete:hover,
   .file-delete:hover {
     color: #f87171;
+    background: var(--color-border);
+  }
+
+  .pin-btn.pinned {
+    display: flex;
+    color: var(--color-accent);
+  }
+
+  .pin-btn:hover {
+    color: var(--color-accent);
     background: var(--color-border);
   }
 

@@ -3,10 +3,10 @@
   import { loadServerTheme, setTheme, activeTheme, refreshImageToken } from './lib/theme.js'
   import { api, hasApiKey, clearApiKey, clearServerUrl, getServerUrl } from './lib/api.js'
   import {
-    fileTree, files, selectedPath, selectedFile, fileContent,
+    fileTree, files, selectedPath, selectedFile, fileContent, pinnedFiles,
     isDirty, saveStatus, aliasMap, remoteChangeAvailable, pollIntervalSecs,
     loadVault, selectFile, createFile, deleteFile, deleteFolder, renameItem,
-    saveCurrentFile, openTodayJournal, uploadFiles,
+    saveCurrentFile, openTodayJournal, uploadFiles, togglePin,
     startPolling, stopPolling, pollVault, acceptRemoteChange,
     startOpenFilePoll, stopOpenFilePoll,
   } from './stores/vault.js'
@@ -20,6 +20,7 @@
   import SearchBar    from './lib/components/SearchBar.svelte'
   import NewItemModal    from './lib/components/NewItemModal.svelte'
   import SettingsPanel   from './lib/components/SettingsPanel.svelte'
+  import ConflictPanel   from './lib/components/ConflictPanel.svelte'
 
   // ── Auth state ───────────────────────────────────────────────────────────
   // In desktop mode a server URL is also required — without it all API calls
@@ -70,6 +71,7 @@
   // ── Sidebar ───────────────────────────────────────────────────────────────
   let sidebarOpen = false       // mobile: drawer open
   let sidebarCollapsed = false  // desktop: panel collapsed
+  let pinnedCollapsed = false   // pinned section collapsed
 
   // Compute which folder paths need to be open to reveal the selected file
   $: openPaths = (() => {
@@ -82,7 +84,8 @@
 
   // ── Modals ───────────────────────────────────────────────────────────────
   let showNewModal    = false
-  let showSettings = false
+  let showSettings    = false
+  let showConflicts   = false
 
   // ── Tauri sync status (desktop only) ─────────────────────────────────────
   let tauriSyncStatus = null  // null = not in Tauri, object = { configured, connected, last_synced, pending_changes }
@@ -191,6 +194,10 @@
 
   async function handleRename(e) {
     await renameItem(e.detail.from, e.detail.to)
+  }
+
+  async function handleTogglePin(e) {
+    await togglePin(e.detail)
   }
 
   // Resolve a wiki-link: check aliases first, then match by path/name
@@ -396,34 +403,78 @@
         </div>
 
         <div class="tree-scroll">
-          <FileTree nodes={$fileTree} {openPaths} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} on:rename={handleRename} />
+          {#if $pinnedFiles.length}
+            <div class="pinned-section">
+              <button class="pinned-header" on:click={() => pinnedCollapsed = !pinnedCollapsed} title={pinnedCollapsed ? 'Expand pinned' : 'Collapse pinned'}>
+                <svg class="pinned-header-icon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 2l1 3h3l-2.5 2 1 3L9 8.5 6.5 10l1-3L5 5h3z"/>
+                  <line x1="9" y1="8.5" x2="9" y2="14" stroke-width="1.6"/>
+                </svg>
+                <span class="pinned-arrow" class:open={!pinnedCollapsed}>›</span>
+              </button>
+              {#if !pinnedCollapsed}
+                {#each $pinnedFiles as pf}
+                  <div class="pinned-row-wrap" class:active={$selectedPath === pf.path}>
+                    <button
+                      class="pinned-row"
+                      class:active={$selectedPath === pf.path}
+                      on:click={() => handleSelect({ detail: pf.path })}
+                      title={pf.path}
+                    >
+                      <span class="pinned-name">{pf.path.split('/').pop().replace(/\.md$/, '')}</span>
+                    </button>
+                    <button class="pinned-unpin" title="Unpin" on:click={() => togglePin(pf.path)}>
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 2l1 3h3l-2.5 2 1 3L9 8.5 6.5 10l1-3L5 5h3z"/>
+                        <line x1="9" y1="8.5" x2="9" y2="14" stroke-width="1.6"/>
+                      </svg>
+                    </button>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+            <div class="pinned-divider"></div>
+          {/if}
+          <FileTree nodes={$fileTree} {openPaths} on:select={handleSelect} on:delete-folder={handleDeleteFolder} on:delete-file={handleDeleteFile} on:rename={handleRename} on:toggle-pin={handleTogglePin} />
         </div>
 
         <div class="sidebar-footer">
           {#if tauriSyncStatus !== null}
-            <!-- Sync status dot: green=synced, amber=pending, red=disconnected -->
+            <!-- Sync/conflict button -->
             <button
               class="sync-status-btn"
-              class:sync-ok={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes === 0}
-              class:sync-pending={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes > 0}
-              class:sync-offline={tauriSyncStatus.configured && !tauriSyncStatus.connected}
+              class:sync-ok={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes === 0 && !tauriSyncStatus.conflict_count}
+              class:sync-pending={tauriSyncStatus.configured && tauriSyncStatus.connected && tauriSyncStatus.pending_changes > 0 && !tauriSyncStatus.conflict_count}
+              class:sync-offline={tauriSyncStatus.configured && !tauriSyncStatus.connected && !tauriSyncStatus.conflict_count}
               class:sync-unconfigured={!tauriSyncStatus.configured}
-              on:click={openSyncConfig}
-              title={!tauriSyncStatus.configured
-                ? 'Not configured — click to set up sync'
-                : tauriSyncStatus.connected
-                  ? tauriSyncStatus.pending_changes > 0
-                    ? `${tauriSyncStatus.pending_changes} pending — click to configure`
-                    : 'Synced — click to configure'
-                  : 'Offline — click to configure'}
+              class:sync-conflict={tauriSyncStatus.conflict_count > 0}
+              on:click={tauriSyncStatus.conflict_count > 0 ? () => (showConflicts = true) : openSyncConfig}
+              title={tauriSyncStatus.conflict_count > 0
+                ? `${tauriSyncStatus.conflict_count} conflict${tauriSyncStatus.conflict_count === 1 ? '' : 's'} — click to resolve`
+                : !tauriSyncStatus.configured
+                  ? 'Not configured — click to set up sync'
+                  : tauriSyncStatus.connected
+                    ? tauriSyncStatus.pending_changes > 0
+                      ? `${tauriSyncStatus.pending_changes} pending — click to configure`
+                      : 'Synced — click to configure'
+                    : 'Offline — click to configure'}
             >
-              <!-- Server icon -->
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="1" y="2" width="14" height="4" rx="1.5"/>
-                <rect x="1" y="9" width="14" height="4" rx="1.5"/>
-                <circle cx="13" cy="4" r="0.8" fill="currentColor" stroke="none"/>
-                <circle cx="13" cy="11" r="0.8" fill="currentColor" stroke="none"/>
-              </svg>
+              {#if tauriSyncStatus.conflict_count > 0}
+                <!-- Warning icon for conflicts -->
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2L14.5 13H1.5L8 2z"/>
+                  <line x1="8" y1="7" x2="8" y2="10"/>
+                  <circle cx="8" cy="12" r="0.5" fill="currentColor" stroke="none"/>
+                </svg>
+              {:else}
+                <!-- Server icon -->
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="1" y="2" width="14" height="4" rx="1.5"/>
+                  <rect x="1" y="9" width="14" height="4" rx="1.5"/>
+                  <circle cx="13" cy="4" r="0.8" fill="currentColor" stroke="none"/>
+                  <circle cx="13" cy="11" r="0.8" fill="currentColor" stroke="none"/>
+                </svg>
+              {/if}
             </button>
           {/if}
           <button class="icon-btn muted sidebar-settings-btn" on:click={openSettings} title="Settings">
@@ -506,6 +557,10 @@
     <SettingsPanel on:close={() => (showSettings = false)} on:poll-interval-change={onPollIntervalChange} />
   {/if}
 
+  {#if showConflicts}
+    <ConflictPanel on:close={() => (showConflicts = false)} on:resolved={refreshSyncStatus} />
+  {/if}
+
   {#if showSyncConfig}
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div class="modal-backdrop" on:click={() => (showSyncConfig = false)}>
@@ -551,7 +606,7 @@
     --color-bg:         #000000;
     --color-surface:    #0d0d0d;
     --color-border:     #1f1f1f;
-    --color-text:       #e2e4ed;
+    --color-text:       #c9ccd6;
     --color-text-muted: #6b6e85;
     /* --color-accent-raw is set by JS (applyAccentColor); CSS derives --color-accent from it.
        Fallback values here cover the first paint before JS runs. */
@@ -765,6 +820,124 @@
     padding: 0 0.3rem;
   }
 
+  .pinned-section {
+    padding: 0.25rem 0 0.1rem;
+  }
+
+  .pinned-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.1rem 0.5rem 0.25rem;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+
+  .pinned-header:hover {
+    color: var(--color-text);
+  }
+
+  .pinned-arrow {
+    display: inline-block;
+    width: 12px;
+    font-size: 0.75rem;
+    transition: transform 0.15s;
+    flex-shrink: 0;
+    color: rgb(187, 255, 0);
+  }
+
+  .pinned-arrow.open {
+    transform: rotate(90deg);
+  }
+
+  .pinned-header-icon {
+    color: rgb(187, 255, 0);
+  }
+
+  .pinned-row-wrap {
+    display: flex;
+    align-items: center;
+    border-radius: 5px;
+    position: relative;
+  }
+
+
+  .pinned-indicator {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 4px;
+    color: var(--color-text-muted);
+  }
+
+  .pinned-row {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.1s;
+  }
+
+  .pinned-row:hover {
+    background: var(--color-border);
+  }
+
+  .pinned-row.active {
+    font-weight: 500;
+  }
+
+  .pinned-row-wrap.active {
+    box-shadow: inset 0 0 0 1.5px var(--color-accent);
+  }
+
+  .pinned-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pinned-unpin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-right: 3px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .pinned-unpin:hover {
+    color: rgb(187, 255, 0);
+    background: var(--color-border);
+  }
+
+  .pinned-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 0.35rem 0.5rem 0.35rem;
+  }
+
   .sidebar-footer {
     padding: 0.5rem 0.75rem;
     border-top: 1px solid var(--color-border);
@@ -799,6 +972,13 @@
   .sync-pending { color: #f59e0b; }
   /* Red — offline / unreachable */
   .sync-offline { color: #f87171; }
+  /* Orange — unresolved conflicts need user action */
+  .sync-conflict { color: #fb923c; animation: conflict-pulse 2s ease-in-out infinite; }
+
+  @keyframes conflict-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
 
   .sidebar-settings-btn {
     padding: 0.15rem 0.25rem;

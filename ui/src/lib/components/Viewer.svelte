@@ -11,7 +11,7 @@
   const dispatch = createEventDispatcher()
 
   // Parse frontmatter once; derive everything from the single result
-  const KNOWN = new Set(['tags', 'tag', 'aliases', 'alias'])
+  const KNOWN = new Set(['tags', 'tag', 'aliases', 'alias', 'pinned'])
   let _fm = { meta: {}, body: '' }
 
   $: {
@@ -26,7 +26,8 @@
   $: tags        = normalizeTags(_fm.meta.tags ?? _fm.meta.tag)
   $: aliases     = normalizeArray(_fm.meta.aliases ?? _fm.meta.alias)
   $: otherFields = Object.entries(_fm.meta).filter(([k]) => !KNOWN.has(k))
-  $: hasFrontmatter = tags.length > 0 || aliases.length > 0 || otherFields.length > 0
+  $: isPinned = _fm.meta.pinned === true || _fm.meta.pinned === 'true'
+  $: hasFrontmatter = isPinned || tags.length > 0 || aliases.length > 0 || otherFields.length > 0
 
   function fmtDate(unix) {
     if (!unix) return null
@@ -63,6 +64,17 @@
 <div class="viewer prose" on:click={handleClick} on:change={handleChange}>
   {#if hasFrontmatter}
     <div class="fm-props">
+      {#if isPinned}
+        <div class="fm-row">
+          <span class="pin-badge">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 2l1 3h3l-2.5 2 1 3L9 8.5 6.5 10l1-3L5 5h3z"/>
+              <line x1="9" y1="8.5" x2="9" y2="14"/>
+            </svg>
+            Pinned
+          </span>
+        </div>
+      {/if}
       {#if tags.length}
         <div class="fm-row">
           <span class="fm-key">tags</span>
@@ -239,6 +251,21 @@
 
   .sep {
     opacity: 0.4;
+  }
+
+  /* ── Pin badge ────────────────────────────────────────────────────────── */
+  .pin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, rgb(187, 255, 0) 15%, transparent);
+    color: rgb(187, 255, 0);
+    font-size: 0.72rem;
+    font-weight: 500;
+    border: 1px solid color-mix(in srgb, rgb(187, 255, 0) 35%, transparent);
+    user-select: none;
   }
 
   /* ── Frontmatter properties panel ───────────────────────────────────── */

@@ -52,6 +52,9 @@ fn make_app_with_key(api_key: &str) -> (Router, TempDir) {
         vault,
         ui_settings: std::sync::Arc::new(std::sync::RwLock::new(ui_settings)),
         tokens: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        // Use None in unit tests so the linear-scan fallback runs.
+        // Tantivy-specific behavior is covered by search_tantivy_* tests and E2E.
+        search_index: None,
     });
     (build_router(state), dir)
 }
@@ -371,12 +374,13 @@ async fn search_finds_content_match() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let json = body_json(res).await;
-    let results = json.as_array().unwrap();
+    let results = json["results"].as_array().unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["path"], "rust.md");
-    assert!(results[0]["snippet"]
+    // snippets is an array; first element should contain the match
+    assert!(results[0]["snippets"][0]
         .as_str()
-        .unwrap()
+        .unwrap_or("")
         .contains("Ownership"));
 }
 
@@ -390,7 +394,7 @@ async fn search_is_case_insensitive() {
     .unwrap();
     let res = app.oneshot(auth_get("/api/search?q=cargo")).await.unwrap();
     let json = body_json(res).await;
-    assert_eq!(json.as_array().unwrap().len(), 1);
+    assert_eq!(json["results"].as_array().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -402,7 +406,7 @@ async fn search_returns_empty_for_no_match() {
         .await
         .unwrap();
     let json = body_json(res).await;
-    assert_eq!(json.as_array().unwrap().len(), 0);
+    assert_eq!(json["results"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]
@@ -414,8 +418,9 @@ async fn search_matches_filename() {
         .await
         .unwrap();
     let json = body_json(res).await;
-    assert_eq!(json.as_array().unwrap().len(), 1);
-    assert_eq!(json[0]["path"], "quarterly-review.md");
+    let results = json["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["path"], "quarterly-review.md");
 }
 
 #[tokio::test]
@@ -424,7 +429,9 @@ async fn search_empty_query_returns_empty() {
     std::fs::write(dir.path().join("note.md"), "content").unwrap();
     let res = app.oneshot(auth_get("/api/search?q=")).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(body_json(res).await.as_array().unwrap().len(), 0);
+    let json = body_json(res).await;
+    assert_eq!(json["results"].as_array().unwrap().len(), 0);
+    assert_eq!(json["total"].as_u64().unwrap(), 0);
 }
 
 #[tokio::test]
@@ -438,7 +445,100 @@ async fn search_skips_non_markdown_files() {
         .await
         .unwrap();
     // Should not find the .png file
-    assert_eq!(body_json(res).await.as_array().unwrap().len(), 0);
+    assert_eq!(body_json(res).await["results"].as_array().unwrap().len(), 0);
+}
+
+// ── Search index (Tantivy) unit tests ─────────────────────────────────────────
+
+#[tokio::test]
+async fn search_tantivy_content_match() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let idx = hash_server::search_index::SearchIndex::build_or_open(dir.path()).unwrap();
+    idx.update_file("rust.md", "# Rust\nOwnership makes memory safe");
+    idx.update_file("python.md", "# Python\nDynamic typing rocks");
+
+    let resp = idx.search("Ownership", 10, 0, None);
+    assert_eq!(resp.total, 1);
+    assert_eq!(resp.results[0].path, "rust.md");
+    assert!(!resp.results[0].snippets.is_empty());
+    assert!(resp.results[0].snippets[0].contains("Ownership"));
+}
+
+#[tokio::test]
+async fn search_tantivy_tag_prefix() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let idx = hash_server::search_index::SearchIndex::build_or_open(dir.path()).unwrap();
+    idx.update_file(
+        "async.md",
+        "---\ntags: [rust, async]\n---\n# Async programming",
+    );
+    idx.update_file(
+        "sync.md",
+        "---\ntags: [rust, sync]\n---\n# Sync programming",
+    );
+
+    let resp = idx.search("tag:async", 10, 0, None);
+    assert_eq!(resp.results.len(), 1);
+    assert_eq!(resp.results[0].path, "async.md");
+}
+
+#[tokio::test]
+async fn search_tantivy_title_prefix() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let idx = hash_server::search_index::SearchIndex::build_or_open(dir.path()).unwrap();
+    idx.update_file("a.md", "# Tokio Runtime\nAsync bodies");
+    idx.update_file("b.md", "# Something else\nTokio mentioned in body");
+
+    // title: should rank/find the file whose title matches, not just body
+    let resp = idx.search("title:Tokio", 10, 0, None);
+    assert_eq!(resp.results[0].path, "a.md");
+}
+
+#[tokio::test]
+async fn search_tantivy_path_prefix_filter() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let idx = hash_server::search_index::SearchIndex::build_or_open(dir.path()).unwrap();
+    idx.update_file("journal/2025/note.md", "Daily standup notes");
+    idx.update_file("projects/notes.md", "Daily project work");
+
+    // path:journal/ should only return files under that prefix
+    let resp = idx.search("Daily", 10, 0, Some("journal/"));
+    assert_eq!(resp.results.len(), 1);
+    assert_eq!(resp.results[0].path, "journal/2025/note.md");
+}
+
+#[tokio::test]
+async fn search_tantivy_delete_removes_from_index() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let idx = hash_server::search_index::SearchIndex::build_or_open(dir.path()).unwrap();
+    idx.update_file("temp.md", "Ephemeral content xyz");
+
+    let before = idx.search("Ephemeral", 10, 0, None);
+    assert_eq!(before.total, 1);
+
+    idx.delete_file("temp.md");
+
+    let after = idx.search("Ephemeral", 10, 0, None);
+    assert_eq!(after.total, 0);
+}
+
+#[tokio::test]
+async fn search_tantivy_pagination() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let idx = hash_server::search_index::SearchIndex::build_or_open(dir.path()).unwrap();
+    for i in 0..5 {
+        idx.update_file(&format!("note{i}.md"), &format!("common keyword file {i}"));
+    }
+
+    let page1 = idx.search("keyword", 2, 0, None);
+    let page2 = idx.search("keyword", 2, 2, None);
+    assert_eq!(page1.total, 5);
+    assert_eq!(page1.results.len(), 2);
+    assert_eq!(page2.results.len(), 2);
+    // Pages should not overlap
+    let p1_paths: Vec<_> = page1.results.iter().map(|r| &r.path).collect();
+    let p2_paths: Vec<_> = page2.results.iter().map(|r| &r.path).collect();
+    assert!(p1_paths.iter().all(|p| !p2_paths.contains(p)));
 }
 
 // ── Sync API ──────────────────────────────────────────────────────────────────

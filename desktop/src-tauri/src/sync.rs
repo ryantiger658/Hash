@@ -29,6 +29,19 @@ pub struct SyncStatus {
     pub connected: bool,
     pub last_synced: Option<i64>,
     pub pending_changes: u32,
+    pub conflict_count: u32,
+}
+
+/// An unresolved sync conflict stored on disk until the user resolves it.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PendingConflict {
+    pub path: String,
+    /// Local file content (UTF-8 text)
+    pub local_content: String,
+    /// Server file content (UTF-8 text)
+    pub server_content: String,
+    pub server_checksum: String,
+    pub detected_at: i64,
 }
 
 #[derive(Serialize, Debug, Default)]
@@ -47,12 +60,87 @@ pub async fn get_sync_status(
     state: tauri::State<'_, Arc<Mutex<SyncState>>>,
 ) -> Result<SyncStatus, String> {
     let s = state.lock().map_err(|e| e.to_string())?;
+    let conflict_count = if s.configured {
+        crate::config::ClientConfig::load()
+            .ok()
+            .map(|c| count_conflicts(Path::new(&c.local_vault_path)))
+            .unwrap_or(0)
+    } else {
+        0
+    };
     Ok(SyncStatus {
         configured: s.configured,
         connected: s.connected,
         last_synced: s.last_synced,
         pending_changes: s.pending_changes,
+        conflict_count,
     })
+}
+
+/// Return all unresolved conflicts stored on disk.
+#[tauri::command]
+pub fn get_conflicts() -> Vec<PendingConflict> {
+    match crate::config::ClientConfig::load() {
+        Ok(config) => read_all_conflicts(Path::new(&config.local_vault_path)),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Resolve a conflict by choosing which version wins.
+///
+/// `resolution` must be `"local"` or `"server"`.
+/// - `"local"`: pushes the local file content to the server via PUT, then updates sync meta.
+/// - `"server"`: writes the stored server content to the local file, then updates sync meta.
+#[tauri::command]
+pub async fn resolve_conflict(path: String, resolution: String) -> Result<(), String> {
+    let config = crate::config::ClientConfig::load().map_err(|e| e.to_string())?;
+    let vault_path = PathBuf::from(&config.local_vault_path);
+
+    let conflicts = read_all_conflicts(&vault_path);
+    let conflict = conflicts
+        .iter()
+        .find(|c| c.path == path)
+        .ok_or_else(|| format!("No stored conflict for: {path}"))?
+        .clone();
+
+    let chosen_checksum: String;
+
+    if resolution == "server" {
+        // Write server content to local file so local matches server
+        let bytes = conflict.server_content.as_bytes();
+        let full_path = vault_path.join(&path);
+        if let Some(parent) = full_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&full_path, bytes).map_err(|e| e.to_string())?;
+        chosen_checksum = conflict.server_checksum.clone();
+    } else {
+        // "local" — push the local file to the server (bypasses conflict detection)
+        let full_path = vault_path.join(&path);
+        let bytes = std::fs::read(&full_path).map_err(|e| e.to_string())?;
+        let checksum = hex::encode(Sha256::digest(&bytes));
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_default();
+        let url = format!("{}/api/files/{}", config.server_url, encode_path(&path));
+        client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|e| format!("network: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("server: {e}"))?;
+
+        chosen_checksum = checksum;
+    }
+
+    write_sync_meta(&vault_path, &path, &chosen_checksum, unix_now());
+    delete_conflict(&vault_path, &path);
+    Ok(())
 }
 
 /// Manually trigger an immediate sync cycle.
@@ -298,16 +386,28 @@ pub async fn run_sync(
                 }
                 for conflict in &push_result.conflicts {
                     result.conflicts += 1;
-                    // Log conflict — full resolution UI comes in M4
-                    // For now, server keeps its version; client will pull on next cycle
-                    tracing::warn!(
-                        "Conflict on '{}': server and local both changed. \
-                         Server version preserved; will pull on next sync.",
-                        conflict.path
-                    );
-                    result
-                        .errors
-                        .push(format!("conflict: {}", conflict.path));
+                    tracing::warn!("Conflict on '{}': stored for user resolution", conflict.path);
+
+                    // Read local content for display in the conflict panel
+                    let local_content = local_map
+                        .get(conflict.path.as_str())
+                        .and_then(|e| std::fs::read_to_string(&e.full_path).ok())
+                        .unwrap_or_default();
+
+                    // Decode server content (base64 → UTF-8)
+                    let server_content = BASE64
+                        .decode(&conflict.server_content)
+                        .ok()
+                        .and_then(|b| String::from_utf8(b).ok())
+                        .unwrap_or_default();
+
+                    write_conflict(vault_path, &PendingConflict {
+                        path: conflict.path.clone(),
+                        local_content,
+                        server_content,
+                        server_checksum: conflict.server_checksum.clone(),
+                        detected_at: unix_now(),
+                    });
                 }
                 for rejected in &push_result.rejected {
                     result
@@ -569,6 +669,64 @@ fn set_error(state: &Arc<Mutex<SyncState>>, msg: &str) {
     if let Ok(mut s) = state.lock() {
         s.last_error = Some(msg.to_string());
     }
+}
+
+// ── Conflict storage ──────────────────────────────────────────────────────────
+
+fn conflict_dir(vault_path: &Path) -> PathBuf {
+    vault_path.join(".mdkb").join("conflicts")
+}
+
+/// Map a vault-relative file path to a safe single-component filename.
+/// Slashes are replaced so the conflict file sits flat in the conflicts dir.
+fn conflict_filename(file_path: &str) -> String {
+    format!("{}.json", file_path.replace('/', "__"))
+}
+
+fn write_conflict(vault_path: &Path, conflict: &PendingConflict) {
+    let dir = conflict_dir(vault_path);
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(json) = serde_json::to_string(conflict) {
+        let _ = std::fs::write(dir.join(conflict_filename(&conflict.path)), json);
+    }
+}
+
+fn read_all_conflicts(vault_path: &Path) -> Vec<PendingConflict> {
+    let dir = conflict_dir(vault_path);
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if entry.path().extension().map_or(false, |e| e == "json") {
+                if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                    if let Ok(c) = serde_json::from_str::<PendingConflict>(&text) {
+                        result.push(c);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+fn delete_conflict(vault_path: &Path, file_path: &str) {
+    let _ = std::fs::remove_file(conflict_dir(vault_path).join(conflict_filename(file_path)));
+}
+
+fn count_conflicts(vault_path: &Path) -> u32 {
+    let dir = conflict_dir(vault_path);
+    if !dir.exists() {
+        return 0;
+    }
+    std::fs::read_dir(&dir)
+        .map(|e| {
+            e.flatten()
+                .filter(|e| e.path().extension().map_or(false, |x| x == "json"))
+                .count() as u32
+        })
+        .unwrap_or(0)
 }
 
 // ── Server API mirror types ───────────────────────────────────────────────────

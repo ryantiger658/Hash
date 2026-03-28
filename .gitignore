@@ -35,6 +35,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local tools (not part of the project)
+tools/
+
 # #ash vault metadata (not committed — lives on the mounted volume)
 .mdkb/
 

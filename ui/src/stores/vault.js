@@ -50,9 +50,14 @@ export const selectedFile = derived(
 
 /**
  * File tree built from the flat file list.
- * Each node: { name, path, isDir, children? }
+ * Each node: { name, path, isDir, pinned?, children? }
  */
 export const fileTree = derived(files, ($files) => buildTree($files))
+
+/** Flat list of pinned markdown notes, in path order. */
+export const pinnedFiles = derived(files, ($files) =>
+  $files.filter(f => !f.isDir && f.pinned)
+)
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
@@ -211,6 +216,55 @@ export async function deleteCurrentFile() {
   fileContent.set('')
   savedContent.set('')
   await loadVault()
+}
+
+/**
+ * Toggle the `pinned` frontmatter field on any markdown file.
+ * Writes the updated content back to the server and refreshes the file list.
+ * If the file is currently open in the editor, the editor content is updated too.
+ */
+export async function togglePin(path) {
+  const content = await api.getFile(path)
+  const toggled = togglePinFrontmatter(content)
+  await api.putFile(path, toggled)
+  if (get(selectedPath) === path) {
+    fileContent.set(toggled)
+    savedContent.set(toggled)
+  }
+  await loadVault()
+}
+
+/**
+ * Toggle `pinned: true` in a note's YAML frontmatter.
+ * - No frontmatter → prepends a minimal frontmatter block with pinned: true
+ * - Has frontmatter, no pinned line → appends pinned: true inside the block
+ * - Has pinned: true → removes the line (unpins)
+ * - Has pinned: <other> → replaces with pinned: true
+ */
+function togglePinFrontmatter(content) {
+  const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/
+  const match = FM_RE.exec(content)
+
+  if (!match) {
+    return `---\npinned: true\n---\n\n${content}`
+  }
+
+  const fmBlock = match[1]
+  const after = content.slice(match[0].length)
+  const lines = fmBlock.split('\n')
+  const pinnedIdx = lines.findIndex(l => l.trim().startsWith('pinned:'))
+  const isCurrentlyPinned = pinnedIdx >= 0 && lines[pinnedIdx].trim() === 'pinned: true'
+
+  let newLines
+  if (isCurrentlyPinned) {
+    newLines = lines.filter((_, i) => i !== pinnedIdx)
+  } else if (pinnedIdx >= 0) {
+    newLines = lines.map((l, i) => i === pinnedIdx ? 'pinned: true' : l)
+  } else {
+    newLines = [...lines, 'pinned: true']
+  }
+
+  return `---\n${newLines.join('\n')}\n---\n${after}`
 }
 
 /** Save the current editor content to the server immediately. */
@@ -397,7 +451,8 @@ function buildTree(files) {
       let node = siblings.find(n => n.name === name)
       if (!node) {
         const isDir = !isLast || !!file.isDir
-        node = { name, path, isDir, children: isDir ? [] : undefined }
+        const pinned = isLast && !file.isDir ? !!file.pinned : false
+        node = { name, path, isDir, pinned, children: isDir ? [] : undefined }
         siblings.push(node)
         // journal dir pinned first, then other dirs, then files — all alphabetical within group
         siblings.sort((a, b) => {

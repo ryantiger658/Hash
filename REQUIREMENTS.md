@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v0.9** — M0–M3 complete; v0.0.8 shipped
+> Status: **v1.0** — M0–M6 complete; v0.0.9 shipped
 
 ---
 
@@ -231,7 +231,7 @@ Response:
 | Storage | File-based (no database) | Transparent, inspectable, trivially backupable |
 | Config format | TOML + env var fallback | Human-readable; env vars enable Docker-native deployment |
 | Sync metadata | `.mdkb/sync/<file>.toml` | Per-file tracking alongside documents |
-| Search index | In-memory, rebuilt on startup | No persistence needed; markdown vaults are small |
+| Search index | Tantivy (BM25 inverted index, persisted to `.mdkb/search-index/`) | Sub-100ms search on large vaults; incremental updates after each write |
 | Authentication | Single API key | Simple for v1 homelab use |
 | Default port | 3535 | ASCII 35 = `#`; 3535 = `##` |
 | SMB file watching | 30s polling | inotify unreliable over SMB |
@@ -337,9 +337,9 @@ vault/
 | M1 — Web UI | Read/edit markdown, folder tree, search, journal, Docker | ✅ Complete |
 | M2 — Sync Protocol | Delta sync, version tracking, conflict detection | ✅ Complete (v0.0.4) |
 | M3 — Desktop Client (Sync) | Background sync agent, offline queue, auto-reconnect | ✅ Complete (v0.0.6–v0.0.8) |
-| M4 — Desktop → Server Push | Two-way sync: edits in desktop webview push back to server | 🔲 Planned |
-| M5 — Conflict Resolution UI | Git-style diff viewer; user picks lines or accepts either side | 🔲 Planned |
-| M6 — Search v2 | Inverted index, BM25 ranking, search syntax, fuzzy match | 🔲 Planned |
+| M4 — Desktop → Server Push | Two-way sync: edits in desktop webview push back to server | ✅ Complete (v0.0.6–v0.0.8) |
+| M5 — Conflict Resolution UI | Git-style diff viewer; user picks lines or accepts either side | ✅ Complete (v0.0.9) |
+| M6 — Search v2 | Inverted index, BM25 ranking, search syntax, fuzzy match | ✅ Complete (v0.0.9) |
 | M7 — Desktop Client (Editor) | Offline viewer + editor without server connectivity | 🔲 Planned |
 
 ---
@@ -358,6 +358,7 @@ Requests collected from early users — not yet scheduled for implementation:
 | Tag browser | Filter and browse notes by tag; sidebar panel or search integration |
 | Vault symlinks | Symlink files or directories from outside the vault into it (e.g. `vault/hash/ -> project docs`); requires WalkDir to preserve symlink-relative paths while reading through to target content |
 | Vim keybindings | Optional vim modal editing (normal/insert/visual) in the editor pane; controlled via `vim_mode` config flag |
+| OIDC / SSO authentication | Replace API-key auth with OpenID Connect (e.g. Authentik, Keycloak, Authelia); enables per-user sessions, homelab SSO integration, and removes the need to distribute a shared API key |
 | E2E encryption | Encrypt vault contents at rest and in transit beyond HTTPS; key management TBD; impacts search (index over ciphertext vs. client-side search) |
 | macOS notarization | Apple Developer account ($99/yr) required; removes Gatekeeper warning; deferred indefinitely — README documents the manual workaround for all macOS versions |
 

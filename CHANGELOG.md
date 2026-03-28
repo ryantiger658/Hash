@@ -4,6 +4,30 @@ All notable changes to #ash are documented here. Versions follow [Semantic Versi
 
 ---
 
+## [v0.0.9] — 2026-03-27
+
+### New Features
+
+- **Pinned Notes** — Pin any note via the file tree action bar; pinned state is persisted in the file's YAML frontmatter (`pinned: true`). A dedicated pinned section appears at the top of the sidebar with collapse/expand, one-click navigation, and unpin buttons. A chartreuse pin badge is shown in the viewer's frontmatter panel for pinned notes.
+- **Conflict Resolution UI (M5)** — When both the desktop client and the server change the same file since the last sync, the conflict is now stored and surfaced in the UI instead of being silently discarded. A pulsing orange warning icon appears in the sidebar footer; clicking it opens the Conflict Panel showing a two-pane diff (your changes vs. server version) with "Keep Mine" and "Keep Server" buttons per file. Resolved conflicts are pushed to the server immediately.
+- **Search v2 — Tantivy full-text index (M6)** — The linear O(n) search has been replaced with a [Tantivy](https://github.com/quickwit-oss/tantivy) BM25 inverted index. The index is built in the background at startup and persisted to `.mdkb/search-index/` for instant cold starts. Incremental updates happen after every file write or delete — no index rebuild required.
+  - **Ranked results** — BM25 scoring surfaces the most relevant notes first; title matches are boosted 3×, tag matches 2×.
+  - **Snippets** — Each result shows up to 3 matching excerpts with the query term in context.
+  - **Pagination** — `limit` and `offset` query params; response includes a `total` count.
+  - **Query syntax** — `tag:<term>` searches only tags; `title:<term>` searches only titles; `path:<prefix>` filters results to a folder prefix.
+  - **Fallback** — If the Tantivy index fails to initialize (e.g. permissions), the server falls back to the previous linear scan transparently.
+- **Google Keep import tool** — `tools/keep-import/convert.py` converts a Google Takeout Keep export to #ash-compatible markdown files with YAML frontmatter (tags, created/updated dates, pinned state, checklist items, image attachments, and web link annotations).
+
+### Improvements
+
+- Search results now show up to 3 snippet excerpts per file instead of a single line.
+- Search "no results" hint suggests `tag:` and `title:` prefix syntax.
+- Results list shows "N more results — refine your query" when there are more than the limit.
+- File tree action buttons reordered: delete is now leftmost to prevent accidental deletion when pinning.
+- Search bar no longer shows browser-native clear button (replaced by custom ✕).
+
+---
+
 ## [v0.0.8] — 2026-03-17
 
 ### Improvements

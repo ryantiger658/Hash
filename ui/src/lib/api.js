@@ -91,8 +91,11 @@ export const api = {
   /** POST /api/files/rename — rename or move a file or directory */
   renameFile: (from, to) => request('POST', '/files/rename', { from, to }),
 
-  /** GET /api/search?q= — full-text search across the vault */
-  search: (q) => request('GET', `/search?q=${encodeURIComponent(q)}`).then(r => r.json()),
+  /** GET /api/search?q= — full-text search across the vault.
+   *  Returns `{ total, results: [{ path, title, score, snippets }] }`. */
+  search: (q, limit = 20, offset = 0) =>
+    request('GET', `/search?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`)
+      .then(r => r.json()),
 
   /** POST /api/auth/session — exchange API key for a short-lived image session token */
   createSession: () => request('POST', '/auth/session').then(r => r.json()),

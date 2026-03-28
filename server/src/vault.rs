@@ -28,6 +28,10 @@ pub struct FileEntry {
     /// True when this entry represents a directory rather than a file.
     #[serde(rename = "isDir", default, skip_serializing_if = "std::ops::Not::not")]
     pub is_dir: bool,
+    /// True when the note's YAML frontmatter contains `pinned: true`.
+    /// Always false for directories and non-markdown files.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 impl Vault {
@@ -86,6 +90,7 @@ impl Vault {
                     created: None,
                     size: 0,
                     is_dir: true,
+                    pinned: false,
                 });
             } else {
                 // Handles both regular files (is_file) and symlinks to files (is_symlink).
@@ -111,6 +116,7 @@ impl Vault {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
+                let pinned = rel.ends_with(".md") && peek_pinned(path);
 
                 entries.push(FileEntry {
                     path: rel,
@@ -119,6 +125,7 @@ impl Vault {
                     created,
                     size: meta.len(),
                     is_dir: false,
+                    pinned,
                 });
             }
         }
@@ -258,6 +265,30 @@ fn checksum_file(path: &Path, meta: &std::fs::Metadata, threshold: u64) -> Resul
             .unwrap_or(0);
         Ok(format!("mtime:{}-size:{}", mtime, meta.len()))
     }
+}
+
+/// Read the first 1 KB of a markdown file and return true if its YAML
+/// frontmatter contains a `pinned: true` line.  Fast — no full file parse.
+fn peek_pinned(path: &Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 1024];
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let n = f.read(&mut buf).unwrap_or(0);
+    let Ok(s) = std::str::from_utf8(&buf[..n]) else {
+        return false;
+    };
+    // Must open with a frontmatter delimiter.
+    if !s.starts_with("---") {
+        return false;
+    }
+    // Find the closing --- (must be on its own line after the opening).
+    let inner = &s[3..];
+    let fm_end = inner.find("\n---").unwrap_or(inner.len());
+    inner[..fm_end]
+        .lines()
+        .any(|l| matches!(l.trim(), "pinned: true" | "pinned: yes"))
 }
 
 /// Normalize a path without requiring it to exist on disk (no canonicalize).

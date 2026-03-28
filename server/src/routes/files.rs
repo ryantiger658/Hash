@@ -72,7 +72,17 @@ pub async fn put_file(
     state
         .vault
         .write_file(&path, &body)
-        .map(|_| StatusCode::NO_CONTENT)
+        .map(|_| {
+            // Update the search index for markdown files.
+            if path.ends_with(".md") {
+                if let Some(idx) = &state.search_index {
+                    if let Ok(content) = std::str::from_utf8(&body) {
+                        idx.update_file(&path, content);
+                    }
+                }
+            }
+            StatusCode::NO_CONTENT
+        })
         .map_err(|e| {
             tracing::error!("put_file({path}) error: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
@@ -87,7 +97,13 @@ pub async fn delete_file(
     state
         .vault
         .delete_file(&path)
-        .map(|_| StatusCode::NO_CONTENT)
+        .map(|_| {
+            // Remove from search index.
+            if let Some(idx) = &state.search_index {
+                idx.delete_file(&path);
+            }
+            StatusCode::NO_CONTENT
+        })
         .map_err(|e| {
             tracing::warn!("delete_file({path}) error: {e}");
             StatusCode::NOT_FOUND

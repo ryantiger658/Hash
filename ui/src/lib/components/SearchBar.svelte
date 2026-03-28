@@ -6,6 +6,7 @@
 
   let query = ''
   let results = []
+  let total = 0
   let searching = false
   let timer = null
 
@@ -13,6 +14,7 @@
     clearTimeout(timer)
     if (!query.trim()) {
       results = []
+      total = 0
       return
     }
     timer = setTimeout(runSearch, 300)
@@ -21,7 +23,9 @@
   async function runSearch() {
     searching = true
     try {
-      results = await api.search(query)
+      const response = await api.search(query)
+      results = response.results ?? []
+      total = response.total ?? 0
     } finally {
       searching = false
     }
@@ -30,12 +34,14 @@
   function selectResult(path) {
     query = ''
     results = []
+    total = 0
     dispatch('select', path)
   }
 
   function clear() {
     query = ''
     results = []
+    total = 0
   }
 </script>
 
@@ -48,9 +54,10 @@
       </svg>
     </span>
     <input
-      type="search"
+      type="text"
       bind:value={query}
       on:input={onInput}
+      placeholder="Search…"
     />
     {#if query}
       <button class="clear" on:click={clear} aria-label="Clear">✕</button>
@@ -63,15 +70,23 @@
         <li>
           <button on:click={() => selectResult(r.path)}>
             <span class="result-path">{r.path.replace(/\.md$/, '')}</span>
-            {#if r.snippet}
-              <span class="result-snippet">{r.snippet}</span>
+            {#if r.snippets && r.snippets.length > 0}
+              {#each r.snippets.slice(0, 3) as snippet}
+                <span class="result-snippet">{snippet}</span>
+              {/each}
             {/if}
           </button>
         </li>
       {/each}
+      {#if total > results.length}
+        <li class="more-hint">{total - results.length} more results — refine your query</li>
+      {/if}
     </ul>
   {:else if query && !searching}
-    <p class="no-results">No results for "{query}"</p>
+    <p class="no-results">
+      No results for "<strong>{query}</strong>"
+      {#if total === 0}<span class="hint"> — try <code>tag:</code> or <code>title:</code> prefix</span>{/if}
+    </p>
   {/if}
 </div>
 
@@ -139,7 +154,7 @@
     margin: 0;
     padding: 0.25rem;
     z-index: 100;
-    max-height: 320px;
+    max-height: 380px;
     overflow-y: auto;
     box-shadow: 0 8px 24px rgba(0,0,0,0.2);
   }
@@ -177,6 +192,14 @@
     max-width: 100%;
   }
 
+  .more-hint {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    text-align: center;
+    opacity: 0.7;
+  }
+
   .no-results {
     position: absolute;
     top: calc(100% + 4px);
@@ -191,4 +214,8 @@
     text-align: center;
     z-index: 100;
   }
+
+  .no-results strong { color: var(--color-text); }
+  .hint { display: block; margin-top: 0.25rem; font-size: 0.75rem; }
+  code { font-family: 'Hack', monospace; font-size: 0.8em; color: var(--color-accent); }
 </style>

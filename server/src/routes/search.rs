@@ -4,81 +4,147 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct SearchParams {
     q: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+    #[serde(default)]
+    offset: usize,
 }
 
-#[derive(Serialize)]
-pub struct SearchResult {
-    /// Vault-relative file path.
-    pub path: String,
-    /// The matching line, trimmed. Empty if the match was on the filename.
-    pub snippet: String,
-    /// 1-based line number of the match, 0 if filename-only match.
-    pub line: usize,
+fn default_limit() -> usize {
+    20
 }
 
-/// GET /api/search?q=<query>
+/// GET /api/search?q=<query>[&limit=20][&offset=0]
 ///
-/// Case-insensitive full-text search across all markdown files in the vault.
-/// Returns the first matching line per file plus any filename matches.
+/// Returns BM25-ranked results with snippets when the Tantivy index is ready.
+/// Falls back to a linear scan if the index is unavailable.
+///
+/// Supports query prefixes:
+///   `tag:<term>`   — search only tags
+///   `title:<term>` — search only title
+///   `path:<prefix>` — filter results to files under the given path prefix
 pub async fn search(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SearchParams>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let query = params.q.trim().to_lowercase();
-    if query.is_empty() {
-        return Ok(Json(vec![]));
+    let q = params.q.trim();
+    if q.is_empty() {
+        return Ok(Json(crate::search_index::SearchResponse {
+            total: 0,
+            results: vec![],
+        }));
     }
 
-    let files = state
+    // Pull out `path:<prefix>` as a post-filter; pass remaining query to the index.
+    let (path_prefix, query_str) = extract_path_prefix(q);
+
+    if let Some(idx) = &state.search_index {
+        let response = idx.search(
+            query_str,
+            params.limit,
+            params.offset,
+            path_prefix.as_deref(),
+        );
+        return Ok(Json(response));
+    }
+
+    // ── Fallback: linear scan (no Tantivy) ───────────────────────────────────
+    Ok(Json(linear_search(
+        &state,
+        query_str,
+        params.limit,
+        params.offset,
+        path_prefix.as_deref(),
+    )))
+}
+
+/// Strip a leading `path:<prefix>` token and return (prefix, remaining_query).
+fn extract_path_prefix(q: &str) -> (Option<String>, &str) {
+    if let Some(rest) = q.strip_prefix("path:") {
+        // `path:journal/` with optional trailing query terms
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let prefix = parts.next().unwrap_or("").to_string();
+        let remaining = parts.next().unwrap_or("").trim();
+        (Some(prefix), remaining)
+    } else {
+        (None, q)
+    }
+}
+
+/// Simple O(n) fallback when the Tantivy index is not available.
+fn linear_search(
+    state: &AppState,
+    query: &str,
+    limit: usize,
+    offset: usize,
+    path_prefix: Option<&str>,
+) -> crate::search_index::SearchResponse {
+    use crate::search_index::{SearchResponse, SearchResult};
+
+    let q_lower = query.to_lowercase();
+    let Ok(files) = state
         .vault
         .list_files(crate::vault::DEFAULT_LARGE_FILE_THRESHOLD)
-        .map_err(|e| {
-            tracing::error!("search list_files error: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    else {
+        return SearchResponse {
+            total: 0,
+            results: vec![],
+        };
+    };
 
-    // Collect filename matches first (higher relevance), then content-only matches.
-    let mut filename_results: Vec<SearchResult> = Vec::new();
-    let mut content_results: Vec<SearchResult> = Vec::new();
+    let mut filename_hits: Vec<SearchResult> = Vec::new();
+    let mut content_hits: Vec<SearchResult> = Vec::new();
 
     for file in files {
-        // Only search markdown files; skip directories and binary attachments.
         if file.is_dir || !file.path.ends_with(".md") {
             continue;
         }
+        if let Some(pfx) = path_prefix {
+            if !file.path.starts_with(pfx) {
+                continue;
+            }
+        }
 
-        let filename_match = file.path.to_lowercase().contains(&query);
-
-        let bytes = match state.vault.read_file(&file.path) {
-            Ok(b) => b,
-            Err(_) => continue,
+        let fname_match = file.path.to_lowercase().contains(&q_lower);
+        let Ok(bytes) = state.vault.read_file(&file.path) else {
+            continue;
         };
-        let content = match std::str::from_utf8(&bytes) {
-            Ok(s) => s,
-            Err(_) => continue,
+        let Ok(content) = std::str::from_utf8(&bytes) else {
+            continue;
         };
 
-        if filename_match {
-            // Filename match takes priority — surface it first, no snippet needed.
-            filename_results.push(SearchResult {
-                path: file.path.clone(),
-                snippet: String::new(),
-                line: 0,
+        let title = content
+            .lines()
+            .find(|l| l.starts_with("# "))
+            .map(|l| l[2..].trim().to_string())
+            .unwrap_or_else(|| {
+                std::path::Path::new(&file.path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            });
+
+        if fname_match {
+            filename_hits.push(SearchResult {
+                path: file.path,
+                title,
+                score: 1.0,
+                snippets: vec![],
             });
         } else {
-            // Content-only match: return first matching line as snippet.
-            for (i, line) in content.lines().enumerate() {
-                if line.to_lowercase().contains(&query) {
-                    content_results.push(SearchResult {
-                        path: file.path.clone(),
-                        snippet: line.trim().to_string(),
-                        line: i + 1,
+            for line in content.lines() {
+                if line.to_lowercase().contains(&q_lower) {
+                    content_hits.push(SearchResult {
+                        path: file.path,
+                        title,
+                        score: 0.5,
+                        snippets: vec![line.trim().to_string()],
                     });
                     break;
                 }
@@ -86,6 +152,8 @@ pub async fn search(
         }
     }
 
-    filename_results.extend(content_results);
-    Ok(Json(filename_results))
+    filename_hits.extend(content_hits);
+    let total = filename_hits.len();
+    let results = filename_hits.into_iter().skip(offset).take(limit).collect();
+    SearchResponse { total, results }
 }

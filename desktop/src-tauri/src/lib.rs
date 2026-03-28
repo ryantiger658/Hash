@@ -23,6 +23,8 @@ pub fn run() {
             sync::trigger_sync,
             sync::get_config,
             sync::save_config,
+            sync::get_conflicts,
+            sync::resolve_conflict,
         ])
         .run(tauri::generate_context!())
         .expect("error while running #ash desktop app");
