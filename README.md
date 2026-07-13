@@ -4,6 +4,8 @@
 
 `#ash` lets you create, edit, and sync markdown documents across devices. It runs as a Docker container in your homelab and syncs with lightweight desktop clients that work fully offline.
 
+Notes support Obsidian-style frontmatter tags, wiki-links, Mermaid diagrams, and a distraction-free focus mode.
+
 The `#` in the name is the markdown heading character — the foundational symbol of any structured document.
 
 ## Architecture

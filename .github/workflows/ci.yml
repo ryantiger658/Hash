@@ -77,11 +77,35 @@ jobs:
           retention-days: 1
 
 
+  # ── Desktop: compile check on every change ───────────────────────────────
+  # Full installers are still built only for release tags, but this catches
+  # Rust/Tauri integration errors before a release is created.
+  desktop-check:
+    name: Desktop (compile check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop/src-tauri
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Check desktop crate
+        run: cargo check
+
+
   # ── Docker: build image ────────────────────────────────────────────────────
   docker-build:
     name: Docker (build)
     runs-on: ubuntu-latest
-    needs: [server-lint-test, ui-build]
+    needs: [server-lint-test, ui-build, desktop-check]
     permissions:
       contents: read
       packages: write   # required to push to ghcr.io
@@ -132,7 +156,7 @@ jobs:
   security-scan:
     name: Security scan (Grype)
     runs-on: ubuntu-latest
-    needs: [server-lint-test, ui-build]
+    needs: [server-lint-test, ui-build, desktop-check]
     permissions:
       security-events: write   # upload SARIF to GitHub Security tab
 
@@ -157,12 +181,11 @@ jobs:
       - name: Scan image with Grype
         uses: anchore/scan-action@v4
         id: grype
-        continue-on-error: true       # never block the pipeline
         env:
           GRYPE_DB_VALIDATE_AGE: "false"   # allow CI runners to use cached DB
         with:
           image: "hashash:scan"
-          fail-build: false           # report findings; don't fail CI
+          fail-build: true            # high/critical findings block a release
           severity-cutoff: high
           output-format: sarif
 
@@ -177,7 +200,7 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    needs: [server-lint-test, ui-build]
+    needs: [server-lint-test, ui-build, desktop-check]
 
     steps:
       - uses: actions/checkout@v4

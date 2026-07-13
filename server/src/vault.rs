@@ -32,6 +32,10 @@ pub struct FileEntry {
     /// Always false for directories and non-markdown files.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    /// Tags extracted from the note's YAML frontmatter.
+    /// Always empty for directories and non-markdown files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 impl Vault {
@@ -91,6 +95,7 @@ impl Vault {
                     size: 0,
                     is_dir: true,
                     pinned: false,
+                    tags: vec![],
                 });
             } else {
                 // Handles both regular files (is_file) and symlinks to files (is_symlink).
@@ -116,7 +121,9 @@ impl Vault {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
-                let pinned = rel.ends_with(".md") && peek_pinned(path);
+                let is_md = rel.ends_with(".md");
+                let pinned = is_md && peek_pinned(path);
+                let tags = if is_md { peek_tags(path) } else { vec![] };
 
                 entries.push(FileEntry {
                     path: rel,
@@ -126,6 +133,7 @@ impl Vault {
                     size: meta.len(),
                     is_dir: false,
                     pinned,
+                    tags,
                 });
             }
         }
@@ -291,6 +299,74 @@ fn peek_pinned(path: &Path) -> bool {
         .any(|l| matches!(l.trim(), "pinned: true" | "pinned: yes"))
 }
 
+/// Extract tags from the supported Obsidian-style frontmatter subset.
+///
+/// This deliberately mirrors `ui/src/lib/frontmatter.js`: scalar values are
+/// split on whitespace/commas, while quoted values in inline or block arrays
+/// remain intact. Keeping both clients aligned prevents the tag browser from
+/// disagreeing with the note properties panel.
+fn peek_tags(path: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return vec![];
+    };
+    extract_frontmatter_tags(&content)
+}
+
+fn extract_frontmatter_tags(content: &str) -> Vec<String> {
+    let mut lines = content.lines();
+    if lines.next() != Some("---") {
+        return vec![];
+    }
+
+    while let Some(line) = lines.next() {
+        if line == "---" {
+            return vec![];
+        }
+        let val = if let Some(rest) = line.strip_prefix("tags:") {
+            rest.trim()
+        } else if let Some(rest) = line.strip_prefix("tag:") {
+            rest.trim()
+        } else {
+            continue;
+        };
+
+        if val.starts_with('[') && val.ends_with(']') {
+            return val[1..val.len() - 1]
+                .split(',')
+                .filter_map(normalize_tag)
+                .collect();
+        } else if !val.is_empty() {
+            return val
+                .split(|c: char| c.is_whitespace() || c == ',')
+                .filter_map(normalize_tag)
+                .collect();
+        } else {
+            let mut tags = Vec::new();
+            for item in lines.by_ref() {
+                let trimmed = item.trim_start();
+                if !item.starts_with([' ', '\t']) || !trimmed.starts_with("- ") {
+                    break;
+                }
+                if let Some(tag) = normalize_tag(&trimmed[2..]) {
+                    tags.push(tag);
+                }
+            }
+            return tags;
+        }
+    }
+    vec![]
+}
+
+fn normalize_tag(raw: &str) -> Option<String> {
+    let tag = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim_start_matches('#')
+        .trim();
+    (!tag.is_empty()).then(|| tag.to_string())
+}
+
 /// Normalize a path without requiring it to exist on disk (no canonicalize).
 fn normalize_path(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
@@ -441,6 +517,32 @@ mod tests {
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains(&"visible.md"));
         assert!(paths.contains(&".hidden.md"));
+    }
+
+    #[test]
+    fn list_files_extracts_tags_with_the_ui_semantics() {
+        let (vault, _dir) = setup();
+        vault
+            .write_file(
+                "tags.md",
+                b"---\ntags: rust, #async systems\n---\n# Tagged note",
+            )
+            .unwrap();
+        let files = vault.list_files(DEFAULT_LARGE_FILE_THRESHOLD).unwrap();
+        let entry = files.iter().find(|file| file.path == "tags.md").unwrap();
+        assert_eq!(entry.tags, ["rust", "async", "systems"]);
+    }
+
+    #[test]
+    fn extract_frontmatter_tags_supports_inline_and_block_arrays() {
+        assert_eq!(
+            extract_frontmatter_tags("---\ntags: [rust, 'two words']\n---\n"),
+            ["rust", "two words"]
+        );
+        assert_eq!(
+            extract_frontmatter_tags("---\ntag:\n  - #rust\n  - async\n---\n"),
+            ["rust", "async"]
+        );
     }
 
     #[test]

@@ -3,6 +3,7 @@
  * Uses marked with syntax highlighting (highlight.js) and custom extensions.
  */
 import { Marked } from 'marked'
+import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 
 // ── Register common languages ─────────────────────────────────────────────────
@@ -72,10 +73,15 @@ const HEX_RE = /^#[0-9a-fA-F]{3,8}$/
 
 // ── Shared renderer options (code blocks, inline code) ───────────────────────
 const baseRenderer = {
-  // Fenced code blocks: syntax highlight with hljs
+  // Fenced code blocks: mermaid diagrams or syntax highlight with hljs
   code(text, lang) {
     const safeText = text ?? ''
     const language = (lang ?? '').split(/\s+/)[0]
+    if (language === 'mermaid') {
+      // Emit a <pre class="mermaid"> placeholder; Viewer.svelte calls mermaid.run() after render.
+      const escaped = safeText.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      return `<pre class="mermaid">${escaped}</pre>`
+    }
     if (language && hljs.getLanguage(language)) {
       try {
         const highlighted = hljs.highlight(safeText, { language }).value
@@ -161,11 +167,17 @@ export function renderMarkdown(md, notePath = '', token = '') {
   const raw = parser.parse(md ?? '')
   // Remove `disabled=""` from task-list checkboxes and stamp a data-cb index
   let cbIndex = 0
-  return raw.replace(/<input\b([^>]*?)\btype="checkbox"([^>]*)>/g, (match, pre, post) => {
+  const interactive = raw.replace(/<input\b([^>]*?)\btype="checkbox"([^>]*)>/g, (match, pre, post) => {
     const attrs = (pre + post)
       .replace(/\s*disabled=""/g, '')
       .replace(/\s*disabled\b/g, '')
       .trim()
     return `<input type="checkbox"${attrs ? ' ' + attrs : ''} data-cb="${cbIndex++}">`
+  })
+
+  // Notes are user-authored content. Sanitizing here keeps the Svelte `{@html}`
+  // boundary safe while retaining the safe Markdown/GFM elements we support.
+  return DOMPurify.sanitize(interactive, {
+    ADD_ATTR: ['data-target', 'data-cb'],
   })
 }

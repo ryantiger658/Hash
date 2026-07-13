@@ -3,7 +3,7 @@
   import { loadServerTheme, setTheme, activeTheme, refreshImageToken } from './lib/theme.js'
   import { api, hasApiKey, clearApiKey, clearServerUrl, getServerUrl } from './lib/api.js'
   import {
-    fileTree, files, selectedPath, selectedFile, fileContent, pinnedFiles,
+    fileTree, files, selectedPath, selectedFile, fileContent, pinnedFiles, tagIndex,
     isDirty, saveStatus, aliasMap, remoteChangeAvailable, pollIntervalSecs,
     loadVault, selectFile, createFile, deleteFile, deleteFolder, renameItem,
     saveCurrentFile, openTodayJournal, uploadFiles, togglePin,
@@ -72,6 +72,11 @@
   let sidebarOpen = false       // mobile: drawer open
   let sidebarCollapsed = false  // desktop: panel collapsed
   let pinnedCollapsed = false   // pinned section collapsed
+  let tagBrowserOpen = false    // tag browser section expanded
+  let selectedTag = null        // currently expanded tag in the browser
+
+  // ── Focus mode ────────────────────────────────────────────────────────────
+  let focusMode = false
 
   // Compute which folder paths need to be open to reveal the selected file
   $: openPaths = (() => {
@@ -244,6 +249,13 @@
       e.preventDefault()
       showSettings = true
     }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'F') {
+      e.preventDefault()
+      focusMode = !focusMode
+    }
+    if (e.key === 'Escape' && focusMode) {
+      focusMode = false
+    }
   }
 
   // Restart the open-file fast poll whenever the selected file changes.
@@ -298,7 +310,7 @@
 {#if !authenticated}
   <LoginForm on:login={onLogin} />
 {:else}
-  <div class="app">
+  <div class="app" class:focus-mode={focusMode}>
     <!-- ── Header ─────────────────────────────────────────────────────── -->
     <header>
       <span class="logo">#</span>
@@ -403,6 +415,45 @@
         </div>
 
         <div class="tree-scroll">
+          {#if $tagIndex.size > 0}
+            <div class="tag-browser-section">
+              <button class="tag-browser-header" aria-label="Browse tags" on:click={() => tagBrowserOpen = !tagBrowserOpen} title={tagBrowserOpen ? 'Collapse tags' : 'Expand tags'}>
+                <svg class="tag-browser-icon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 2h5l7 7-5 5-7-7V2z"/>
+                  <circle cx="5" cy="5" r="1" fill="currentColor" stroke="none"/>
+                </svg>
+                <span class="tag-browser-arrow" class:open={tagBrowserOpen}>›</span>
+              </button>
+              {#if tagBrowserOpen}
+                <div class="tag-list">
+                  {#each [...$tagIndex.entries()] as [tag, paths]}
+                    <div class="tag-row-wrap">
+                      <button
+                        class="tag-row"
+                        class:active={selectedTag === tag}
+                        on:click={() => selectedTag = selectedTag === tag ? null : tag}
+                      >
+                        <span class="tag-label">#{tag}</span>
+                        <span class="tag-count">{paths.length}</span>
+                      </button>
+                      {#if selectedTag === tag}
+                        <div class="tag-files">
+                          {#each paths as path}
+                            <button
+                              class="tag-file-row"
+                              class:active={$selectedPath === path}
+                              on:click={() => handleSelect({ detail: path })}
+                              title={path}
+                            >{path.split('/').pop().replace(/\.md$/, '')}</button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
           {#if $pinnedFiles.length}
             <div class="pinned-section">
               <button class="pinned-header" on:click={() => pinnedCollapsed = !pinnedCollapsed} title={pinnedCollapsed ? 'Expand pinned' : 'Collapse pinned'}>
@@ -516,6 +567,15 @@
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 8s3-4.5 7-4.5S15 8 15 8s-3 4.5-7 4.5S1 8 1 8z"/>
               <circle cx="8" cy="8" r="2"/>
+            </svg>
+          </button>
+          <div class="float-divider"></div>
+          <button class:active={focusMode} on:click={() => focusMode = !focusMode} title="Focus mode (⌘⇧F)">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 6V2h4"/>
+              <path d="M15 6V2h-4"/>
+              <path d="M1 10v4h4"/>
+              <path d="M15 10v4h-4"/>
             </svg>
           </button>
           <div class="float-divider"></div>
@@ -864,15 +924,6 @@
     position: relative;
   }
 
-
-  .pinned-indicator {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    margin-right: 4px;
-    color: var(--color-text-muted);
-  }
-
   .pinned-row {
     flex: 1;
     min-width: 0;
@@ -937,6 +988,121 @@
     background: var(--color-border);
     margin: 0.35rem 0.5rem 0.35rem;
   }
+
+  /* ── Tag browser ─────────────────────────────────────────────────────────── */
+  .tag-browser-section {
+    padding: 0.25rem 0 0.1rem;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 0.25rem;
+  }
+
+  .tag-browser-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.1rem 0.5rem 0.25rem;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    text-align: left;
+  }
+
+  .tag-browser-header:hover { color: var(--color-text); }
+
+  .tag-browser-icon { color: var(--color-text-muted); flex-shrink: 0; }
+
+  .tag-browser-arrow {
+    display: inline-block;
+    width: 12px;
+    font-size: 0.75rem;
+    transition: transform 0.15s;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .tag-browser-arrow.open { transform: rotate(90deg); }
+
+  .tag-list { padding: 0 0.3rem 0.25rem; }
+
+  .tag-row-wrap { margin-bottom: 1px; }
+
+  .tag-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+    padding: 3px 6px;
+    gap: 0.4rem;
+    transition: background 0.1s;
+  }
+
+  .tag-row:hover { background: var(--color-border); }
+
+  .tag-row.active {
+    background: var(--color-border);
+    font-weight: 500;
+  }
+
+  .tag-label {
+    flex: 1;
+    font-size: 0.82rem;
+    color: var(--color-accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+
+  .tag-count {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 0 5px;
+    flex-shrink: 0;
+    line-height: 1.6;
+  }
+
+  .tag-files {
+    padding: 2px 0 2px 14px;
+  }
+
+  .tag-file-row {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 0.8rem;
+    color: var(--color-text);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+
+  .tag-file-row:hover { background: var(--color-border); }
+
+  .tag-file-row.active {
+    font-weight: 500;
+    color: var(--color-accent);
+  }
+
+  /* ── Focus mode ──────────────────────────────────────────────────────────── */
+  .app.focus-mode header { display: none; }
+  .app.focus-mode .sidebar { display: none; }
+  .app.focus-mode .editor-mode-float { top: 8px; }
+  .app.focus-mode .body { height: 100vh; }
 
   .sidebar-footer {
     padding: 0.5rem 0.75rem;

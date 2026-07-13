@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v1.0** — M0–M6 complete; v0.0.9 shipped
+> Status: **v1.1** — M0–M6 complete; v0.0.10 in development
 
 ---
 
@@ -94,6 +94,9 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - Auto-continue lists: Enter inside a list item inserts the next marker; Enter on an empty item exits the list (`v0.0.4`)
 - In-app settings panel: toggle line numbers, spell check, editor labels, accent color, theme; persisted server-side in `.mdkb/ui-settings.toml` (`v0.0.4`)
 - `⌘B` / `Ctrl+B` keyboard shortcut to toggle sidebar
+- Tag browser in the sidebar: grouped note tags with counts and one-click navigation
+- Focus mode: hides sidebar and header; toggle with `⌘⇧F` / `Ctrl+Shift+F`, exit with Escape
+- Mermaid diagrams: render fenced `mermaid` code blocks in the preview; diagrams are sanitized and use Mermaid strict security mode
 
 ### Sync API ✅ M1 (foundation) / 🔧 M2 (v0.0.4)
 
@@ -237,6 +240,10 @@ Response:
 | SMB file watching | 30s polling | inotify unreliable over SMB |
 | Docker base image | Chainguard glibc-dynamic | Near-zero CVE distroless runtime |
 | Container registry | GitHub Container Registry (ghcr.io) | Free for public repos; built into CI |
+| Rendered markdown and diagrams | Sanitize with DOMPurify; Mermaid strict mode | Notes are user-authored and rendered in the browser, so they must not execute code |
+| Mermaid loading | Dynamic import when a note contains a Mermaid block | Avoid adding diagram code to the normal editor bundle |
+| Tag parsing | Same documented frontmatter subset in server and UI | Sidebar tag results must match the note properties panel |
+| Release vulnerability policy | Block on high/critical Grype findings | A reported-but-released critical image does not meet the security goal |
 
 ---
 
@@ -351,11 +358,8 @@ Requests collected from early users — not yet scheduled for implementation:
 | Feature | Notes |
 |---|---|
 | Full theming | Custom color schemes beyond accent color; CSS variable overrides; theme gallery |
-| MermaidJS diagrams | Render `mermaid` fenced code blocks as flowcharts, sequence diagrams, etc. |
 | MARP slide decks | Render MARP-formatted markdown as presentation slides in-browser |
-| Focus mode | Distraction-free writing view: hide sidebar and chrome; toggled via keyboard shortcut |
 | Version update notification | Check for new releases and show a badge/prompt when a newer version is available |
-| Tag browser | Filter and browse notes by tag; sidebar panel or search integration |
 | Vault symlinks | Symlink files or directories from outside the vault into it (e.g. `vault/hash/ -> project docs`); requires WalkDir to preserve symlink-relative paths while reading through to target content |
 | Vim keybindings | Optional vim modal editing (normal/insert/visual) in the editor pane; controlled via `vim_mode` config flag |
 | OIDC / SSO authentication | Replace API-key auth with OpenID Connect (e.g. Authentik, Keycloak, Authelia); enables per-user sessions, homelab SSO integration, and removes the need to distribute a shared API key |
@@ -390,3 +394,4 @@ Requests collected from early users — not yet scheduled for implementation:
 | 0.8 | 2026-03-16 | v0.0.4 scope defined: M2 sync protocol, image rendering (session token auth), settings panel, file rename, auto-continue lists, folder delete bug fix |
 | 0.9 | 2026-03-17 | M3 complete (v0.0.6–v0.0.8): desktop sync engine, config UI, server icon, login fix, icon redesign; backlog updated with e2e encryption, push-from-desktop, conflict UI, notarization |
 | 1.0 | 2026-03-17 | Roadmap updated: M4 (desktop→server push), M5 (conflict UI), M6 (Search v2/Tantivy), M7 (offline editor); notarization deferred; macOS Gatekeeper docs updated for Sequoia |
+| 1.1 | 2026-07-13 | v0.0.10 scope: secure Mermaid rendering, tag browser, focus mode, matching server/UI tag parsing, and release-check improvements |

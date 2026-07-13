@@ -59,6 +59,23 @@ export const pinnedFiles = derived(files, ($files) =>
   $files.filter(f => !f.isDir && f.pinned)
 )
 
+/**
+ * Map of tag name → sorted array of vault-relative file paths.
+ * Built from the `tags` field on each FileEntry (populated by peek_tags on the server).
+ * Sorted alphabetically by tag name.
+ */
+export const tagIndex = derived(files, ($files) => {
+  const map = new Map()
+  for (const f of $files) {
+    if (f.isDir || !f.tags?.length) continue
+    for (const tag of f.tags) {
+      if (!map.has(tag)) map.set(tag, [])
+      map.get(tag).push(f.path)
+    }
+  }
+  return new Map([...map.entries()].sort(([a], [b]) => a.localeCompare(b)))
+})
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 /** Fetch the full file list from the server. */

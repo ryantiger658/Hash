@@ -1,14 +1,50 @@
 <script>
-  import { createEventDispatcher } from 'svelte'
+  import { createEventDispatcher, afterUpdate } from 'svelte'
+  import DOMPurify from 'dompurify'
   import { renderMarkdown } from '../markdown.js'
   import { parseFrontmatter, normalizeTags, normalizeArray } from '../frontmatter.js'
-  import { imageToken } from '../theme.js'
+  import { imageToken, activeTheme } from '../theme.js'
 
   export let content = ''
   /** FileEntry from the server — provides created/modified timestamps. */
   export let file = null
 
   const dispatch = createEventDispatcher()
+
+  // ── Mermaid ───────────────────────────────────────────────────────────────
+  let mermaidPromise
+
+  async function renderMermaidDiagrams() {
+    const theme = $activeTheme === 'dark' ? 'dark' : 'default'
+    const diagrams = document.querySelectorAll('.viewer pre.mermaid')
+    if (!diagrams.length) return
+
+    // Mermaid is loaded only for notes that actually contain a diagram.
+    mermaidPromise ??= import('mermaid').then(({ default: mermaid }) => mermaid)
+    const mermaid = await mermaidPromise
+    mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' })
+
+    for (const el of diagrams) {
+      if (el.dataset.mermaidTheme === theme || el.dataset.mermaidRendering) continue
+      el.dataset.mermaidRendering = 'true'
+      const definition = el.dataset.mermaidDefinition ?? el.textContent ?? ''
+      el.dataset.mermaidDefinition = definition
+      try {
+        const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`
+        const { svg } = await mermaid.render(id, definition)
+        // Mermaid emits SVG. Sanitize it independently before crossing the DOM boundary.
+        el.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } })
+        el.dataset.mermaidTheme = theme
+      } catch (err) {
+        el.classList.add('mermaid-error')
+        el.textContent = `⚠ Diagram error: ${err?.message ?? err}`
+      } finally {
+        delete el.dataset.mermaidRendering
+      }
+    }
+  }
+
+  afterUpdate(() => { void renderMermaidDiagrams() })
 
   // Parse frontmatter once; derive everything from the single result
   const KNOWN = new Set(['tags', 'tag', 'aliases', 'alias', 'pinned'])
@@ -251,6 +287,31 @@
 
   .sep {
     opacity: 0.4;
+  }
+
+  /* ── Mermaid diagrams ────────────────────────────────────────────────── */
+  .viewer :global(pre.mermaid) {
+    background: transparent;
+    border: none;
+    padding: 0.5rem 0;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+  }
+
+  .viewer :global(pre.mermaid svg) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .viewer :global(pre.mermaid-error) {
+    background: color-mix(in srgb, #f87171 10%, transparent);
+    border: 1px solid #f87171;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    color: #f87171;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
   }
 
   /* ── Pin badge ────────────────────────────────────────────────────────── */

@@ -4,6 +4,22 @@ All notable changes to #ash are documented here. Versions follow [Semantic Versi
 
 ---
 
+## [v0.0.10] — In progress
+
+### New Features
+
+- **Tag browser** — Browse frontmatter tags in the sidebar, see note counts, and open tagged notes directly.
+- **Focus mode** — Hide the header and sidebar for distraction-free writing with `⌘⇧F` / `Ctrl+Shift+F`; press Escape to exit.
+- **Mermaid diagrams** — Render fenced `mermaid` blocks in note previews.
+
+### Security and Performance
+
+- Sanitized rendered markdown and Mermaid SVG before inserting it into the page; Mermaid now uses strict security mode.
+- Mermaid is loaded only when the open note contains a diagram, keeping the regular editor bundle small.
+- Server tag extraction now matches the UI's supported frontmatter forms and no longer truncates long frontmatter blocks.
+
+---
+
 ## [v0.0.9] — 2026-03-27
 
 ### New Features

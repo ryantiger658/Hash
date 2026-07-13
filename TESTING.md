@@ -127,6 +127,14 @@ Mark each item ✅ pass, ❌ fail (with a note), or ⏭ skipped (with a reason).
 - [ ] An empty query returns no results
 - [ ] A query with no matches shows an empty list
 
+## 8a — Tags, focus mode, and diagrams
+
+- [ ] Notes using scalar, inline-array, and block-list `tags` frontmatter show the same tags in the properties panel and sidebar tag browser
+- [ ] Expanding a tag shows its notes; clicking a note opens it
+- [ ] `⌘⇧F` / `Ctrl+Shift+F` hides the header and sidebar; Escape restores them
+- [ ] A valid fenced `mermaid` block renders a diagram in preview; invalid diagram source shows an error without breaking the note
+- [ ] Switching between light and dark themes redraws Mermaid diagrams appropriately
+
 ---
 
 ## 9 — Journal
