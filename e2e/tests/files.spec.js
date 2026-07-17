@@ -96,7 +96,10 @@ test.describe('Deleting files', () => {
     await fileWrap.hover()
     // Accept the browser confirm() dialog that appears before deletion
     page.once('dialog', dialog => dialog.accept())
-    await fileWrap.locator('button[title="Delete file"]').click()
+    // Other parallel tests can add files and move this row between hover and
+    // click. The separate test above covers hover visibility; dispatch the
+    // event directly so this test focuses on the delete behavior itself.
+    await fileWrap.locator('button[title="Delete file"]').dispatchEvent('click')
 
     await expect(fileWrap).not.toBeVisible()
   })
@@ -124,8 +127,7 @@ test.describe('Renaming files', () => {
 
     const baseName = name.replace(/\.md$/, '')
     const fileWrap = page.locator(`.file-row-wrap:has-text("${baseName}")`)
-    await fileWrap.hover()
-    await fileWrap.locator('button[title="Rename"]').click()
+    await fileWrap.locator('button[title="Rename"]').dispatchEvent('click')
 
     // After clicking rename, the has-text filter no longer matches (input replaces text),
     // so use a page-level locator for the rename input
@@ -145,8 +147,7 @@ test.describe('Renaming files', () => {
 
     const baseName = name.replace(/\.md$/, '')
     const fileWrap = page.locator(`.file-row-wrap:has-text("${baseName}")`)
-    await fileWrap.hover()
-    await fileWrap.locator('button[title="Rename"]').click()
+    await fileWrap.locator('button[title="Rename"]').dispatchEvent('click')
     await page.keyboard.press('Escape')
 
     await expect(page.locator('.rename-input')).not.toBeVisible()

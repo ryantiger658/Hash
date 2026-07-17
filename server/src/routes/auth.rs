@@ -21,7 +21,9 @@ use uuid::Uuid;
 
 const FLOW_TTL: Duration = Duration::from_secs(600);
 const SESSION_TTL: Duration = Duration::from_secs(86_400);
-const SESSION_COOKIE: &str = "hash-session";
+const SECURE_SESSION_COOKIE: &str = "__Host-hash-session-v2";
+const LOCAL_SESSION_COOKIE: &str = "hash-session-v2";
+const LEGACY_SESSION_COOKIE: &str = "hash-session";
 
 fn oidc_values(state: &AppState) -> Option<(&str, &str, &str, &str)> {
     Some((
@@ -145,45 +147,47 @@ pub async fn oidc_callback(
                 created: Instant::now(),
             },
         );
-    let secure = state
-        .config
-        .auth
-        .oidc_redirect_url
-        .as_deref()
-        .is_some_and(|url| url.starts_with("https://"));
-    let cookie = format!(
-        "{SESSION_COOKIE}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={};{}",
-        SESSION_TTL.as_secs(),
-        if secure { " Secure" } else { "" }
-    );
+    let secure = uses_secure_cookie(&state);
+    let cookie = session_cookie(&state, &session_id);
     let mut response = Redirect::to("/").into_response();
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        HeaderValue::from_str(&cookie).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-    );
+    append_set_cookie(&mut response, &cookie)?;
+    append_set_cookie(
+        &mut response,
+        &expired_cookie(LEGACY_SESSION_COOKIE, secure),
+    )?;
     Ok(response)
 }
 
 pub async fn auth_status(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    Json(
-        json!({ "oidc_enabled": oidc_values(&state).is_some(), "authenticated": valid_session(&state, &headers) }),
-    )
+) -> Result<Response, StatusCode> {
+    let authenticated = valid_session(&state, &headers);
+    let body =
+        json!({ "oidc_enabled": oidc_values(&state).is_some(), "authenticated": authenticated });
+    let mut response = Json(body).into_response();
+    append_set_cookie(
+        &mut response,
+        &expired_cookie(LEGACY_SESSION_COOKIE, uses_secure_cookie(&state)),
+    )?;
+    Ok(response)
 }
 
 pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if let Some(id) = cookie_value(&headers, SESSION_COOKIE) {
-        if let Ok(mut sessions) = state.web_sessions.lock() {
-            sessions.remove(id);
+    if let Ok(mut sessions) = state.web_sessions.lock() {
+        for name in [session_cookie_name(&state), LEGACY_SESSION_COOKIE] {
+            if let Some(id) = cookie_value(&headers, name) {
+                sessions.remove(id);
+            }
         }
     }
     let mut response = StatusCode::NO_CONTENT.into_response();
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        HeaderValue::from_static("hash-session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
-    );
+    let secure = uses_secure_cookie(&state);
+    for name in [session_cookie_name(&state), LEGACY_SESSION_COOKIE] {
+        if let Ok(value) = HeaderValue::from_str(&expired_cookie(name, secure)) {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
+    }
     response
 }
 
@@ -225,7 +229,7 @@ pub async fn require_api_key(
 }
 
 fn valid_session(state: &AppState, headers: &HeaderMap) -> bool {
-    let Some(id) = cookie_value(headers, SESSION_COOKIE) else {
+    let Some(id) = cookie_value(headers, session_cookie_name(state)) else {
         return false;
     };
     let Ok(mut sessions) = state.web_sessions.lock() else {
@@ -233,6 +237,48 @@ fn valid_session(state: &AppState, headers: &HeaderMap) -> bool {
     };
     sessions.retain(|_, session| session.created.elapsed() < SESSION_TTL);
     sessions.contains_key(id)
+}
+
+fn uses_secure_cookie(state: &AppState) -> bool {
+    state
+        .config
+        .auth
+        .oidc_redirect_url
+        .as_deref()
+        .is_some_and(|url| url.starts_with("https://"))
+}
+
+fn session_cookie_name(state: &AppState) -> &'static str {
+    if uses_secure_cookie(state) {
+        SECURE_SESSION_COOKIE
+    } else {
+        LOCAL_SESSION_COOKIE
+    }
+}
+
+fn session_cookie(state: &AppState, session_id: &str) -> String {
+    let secure = uses_secure_cookie(state);
+    format!(
+        "{}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{}",
+        session_cookie_name(state),
+        SESSION_TTL.as_secs(),
+        if secure { "; Secure" } else { "" }
+    )
+}
+
+fn expired_cookie(name: &str, secure: bool) -> String {
+    format!(
+        "{name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT{}",
+        if secure { "; Secure" } else { "" }
+    )
+}
+
+fn append_set_cookie(response: &mut Response, cookie: &str) -> Result<(), StatusCode> {
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(cookie).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+    );
+    Ok(())
 }
 
 fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {

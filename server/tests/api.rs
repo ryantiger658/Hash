@@ -35,6 +35,13 @@ fn make_app_with_key(api_key: &str) -> (Router, TempDir) {
 }
 
 fn make_app_with_state(api_key: &str) -> (Router, TempDir, Arc<AppState>) {
+    make_app_with_redirect(api_key, None)
+}
+
+fn make_app_with_redirect(
+    api_key: &str,
+    oidc_redirect_url: Option<&str>,
+) -> (Router, TempDir, Arc<AppState>) {
     let dir = tempfile::tempdir().unwrap();
     let config = Config {
         server: ServerConfig {
@@ -51,7 +58,7 @@ fn make_app_with_state(api_key: &str) -> (Router, TempDir, Arc<AppState>) {
             oidc_issuer: None,
             oidc_client_id: None,
             oidc_client_secret: None,
-            oidc_redirect_url: None,
+            oidc_redirect_url: oidc_redirect_url.map(str::to_string),
             oidc_scopes: "openid profile email".into(),
         },
         ui: UiConfig::default(),
@@ -190,6 +197,7 @@ async fn auth_status_reports_oidc_disabled_without_configuration() {
         .oneshot(
             Request::builder()
                 .uri("/api/auth/status")
+                .header("Cookie", "hash-session=orphaned-session")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -197,6 +205,12 @@ async fn auth_status_reports_oidc_disabled_without_configuration() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
+    assert!(res
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with("hash-session=") && value.contains("Max-Age=0")));
     assert_eq!(
         body_json(res).await,
         serde_json::json!({ "oidc_enabled": false, "authenticated": false })
@@ -218,7 +232,7 @@ async fn oidc_web_session_cookie_authenticates_protected_routes() {
         .oneshot(
             Request::builder()
                 .uri("/api/files")
-                .header("Cookie", "hash-session=test-session")
+                .header("Cookie", "hash-session-v2=test-session")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -226,6 +240,83 @@ async fn oidc_web_session_cookie_authenticates_protected_routes() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn oidc_https_session_uses_host_prefixed_cookie() {
+    let (app, _dir, state) = make_app_with_redirect(
+        TEST_KEY,
+        Some("https://notes.example.test/api/auth/oidc/callback"),
+    );
+    state.web_sessions.lock().unwrap().insert(
+        "test-session".into(),
+        WebSession {
+            subject: "user-123".into(),
+            created: Instant::now(),
+        },
+    );
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/files")
+                .header("Cookie", "__Host-hash-session-v2=test-session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let logout = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/auth/logout")
+                .header("Cookie", "__Host-hash-session-v2=test-session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(logout
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| {
+            value.starts_with("__Host-hash-session-v2=")
+                && value.contains("Path=/")
+                && value.contains("Secure")
+                && !value.contains("Domain=")
+        }));
+}
+
+#[tokio::test]
+async fn legacy_oidc_cookie_is_not_accepted() {
+    let (app, _dir, state) = make_app_with_state(TEST_KEY);
+    state.web_sessions.lock().unwrap().insert(
+        "test-session".into(),
+        WebSession {
+            subject: "user-123".into(),
+            created: Instant::now(),
+        },
+    );
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/files")
+                .header("Cookie", "hash-session=test-session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -245,7 +336,7 @@ async fn logout_revokes_oidc_web_session_and_expires_cookie() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/api/auth/logout")
-                .header("Cookie", "hash-session=test-session")
+                .header("Cookie", "hash-session-v2=test-session")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -258,13 +349,19 @@ async fn logout_revokes_oidc_web_session_and_expires_cookie() {
         .get_all("set-cookie")
         .iter()
         .filter_map(|value| value.to_str().ok())
-        .any(|value| value.contains("hash-session=") && value.contains("Max-Age=0")));
+        .any(|value| value.starts_with("hash-session-v2=") && value.contains("Max-Age=0")));
+    assert!(res
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with("hash-session=") && value.contains("Max-Age=0")));
 
     let protected = app
         .oneshot(
             Request::builder()
                 .uri("/api/files")
-                .header("Cookie", "hash-session=test-session")
+                .header("Cookie", "hash-session-v2=test-session")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -309,7 +406,7 @@ async fn mcp_rejects_oidc_web_session_cookie() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/mcp")
-                .header("Cookie", "hash-session=test-session")
+                .header("Cookie", "hash-session-v2=test-session")
                 .header("Content-Type", "application/json")
                 .body(Body::from(
                     r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,

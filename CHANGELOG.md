@@ -4,7 +4,16 @@ All notable changes to #ash are documented here. Versions follow [Semantic Versi
 
 ---
 
-## [v0.0.10] — In progress
+## [v0.0.11] — 2026-07-17
+
+### Bug Fixes
+
+- **OIDC session recovery after redeploys** — HTTPS deployments now use the versioned, host-only `__Host-hash-session-v2` cookie. The old `hash-session` cookie is automatically expired so a browser cannot keep presenting an orphaned in-memory session after the container is replaced. Local HTTP development uses `hash-session-v2` because browsers require `Secure` on `__Host-` cookies.
+- **SSO button contrast** — The OIDC sign-in action now uses theme-aware text on the login-card surface with an accent border instead of white text on a bright accent background.
+
+---
+
+## [v0.0.10] — 2026-07-16
 
 ### New Features
 

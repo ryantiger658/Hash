@@ -185,7 +185,19 @@
     color: #f87171;
   }
 
-  .oidc-btn { margin-top: 0.25rem; }
+  .oidc-btn {
+    margin-top: 0.25rem;
+    border: 1px solid var(--color-accent);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .oidc-btn:hover,
+  .oidc-btn:focus-visible {
+    background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+    outline: none;
+  }
+
   .divider { display: flex; align-items: center; gap: 0.6rem; color: var(--color-text-muted); font-size: 0.72rem; }
   .divider::before, .divider::after { content: ''; height: 1px; background: var(--color-border); flex: 1; }
 </style>

@@ -272,12 +272,15 @@ Mark each item ✅ pass, ❌ fail (with a note), or ⏭ skipped (with a reason).
 
 - [ ] With OIDC unset, the web login shows only the API-key form
 - [ ] With all OIDC variables set, the web login shows **Sign in with SSO** and redirects to the configured provider
+- [ ] **Sign in with SSO** remains clearly readable in light and dark themes with the default chartreuse accent
 - [ ] The provider returns to `/api/auth/oidc/callback`; #ash opens the vault without requesting an API key
 - [ ] Reloading the page keeps the browser signed in
 - [ ] Logging out revokes the server session and expires the browser cookie
+- [ ] HTTPS login sets `__Host-hash-session-v2` with `Secure`, `Path=/`, and no `Domain` attribute
+- [ ] Loading #ash with a legacy `hash-session` cookie expires it and presents a clean login after a container restart
 - [ ] A callback with a missing, changed, reused, or expired `state` value is rejected
 - [ ] An ID token with the wrong issuer, audience, signature, or nonce is rejected
 - [ ] API-key browser login, desktop sync, and MCP Bearer authentication still work while OIDC is enabled
 - [ ] An OIDC browser-session cookie cannot authenticate the `/mcp` endpoint
 
-*Last updated: v0.0.10*
+*Last updated: v0.0.11*

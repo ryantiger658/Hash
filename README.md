@@ -92,7 +92,7 @@ environment:
   HASH_OIDC_SCOPES: "openid profile email"
 ```
 
-The issuer must expose OpenID Connect discovery metadata. The browser uses Authorization Code with PKCE and receives an `HttpOnly` session cookie after the ID token is verified. Browser sessions last 24 hours and are cleared when the server restarts. The API key remains available for desktop sync, MCP clients, and administrator fallback access.
+The issuer must expose OpenID Connect discovery metadata. The browser uses Authorization Code with PKCE and receives an `HttpOnly` session cookie after the ID token is verified. Browser sessions last 24 hours and are cleared when the server restarts. HTTPS deployments use the host-only `__Host-hash-session-v2` cookie; #ash automatically removes the legacy `hash-session` cookie during migration. The API key remains available for desktop sync, MCP clients, and administrator fallback access.
 
 If you mount a `config.toml`, use the equivalent `[auth]` fields shown in [`config.example.toml`](config.example.toml); the project loads the config file instead of environment configuration.
 

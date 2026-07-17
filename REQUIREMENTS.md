@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v1.2** — M0–M6 complete; v0.0.10 in development
+> Status: **v1.3** — M0–M6 complete; v0.0.11 in development
 
 ---
 
@@ -89,6 +89,7 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - File metadata footer (created date, last updated) rendered below each note
 - Hidden files and directories (dotfiles) hidden by default; controllable via `show_hidden_files` config
 - Login gate (API key); key stored in browser `localStorage`
+- OIDC sign-in button uses normal theme text on the login-card surface with an accent border, preserving readable contrast with bright accent colors
 - Rename files inline from the file tree (`v0.0.4`)
 - Image rendering: vault assets served via `/api/vault-asset/*`; relative paths in `![alt](path)` resolved against the note's directory (`v0.0.4`)
 - Auto-continue lists: Enter inside a list item inserts the next marker; Enter on an empty item exits the list (`v0.0.4`)
@@ -120,6 +121,7 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - Provider-neutral OpenID Connect Authorization Code + PKCE login, using environment variables for the issuer, client ID, client secret, scopes, and public callback URL
 - Discover provider endpoints and signing keys from the configured issuer; validate the ID token issuer, audience, signature, and one-time nonce before creating a session
 - Browser sessions use a random, `HttpOnly`, `SameSite=Lax` cookie, expire after 24 hours, and are held in memory so a server restart signs browsers out
+- HTTPS deployments use the host-only `__Host-hash-session-v2` cookie (`Secure`, `Path=/`, and no `Domain`); local HTTP development uses `hash-session-v2`. The legacy `hash-session` cookie is actively expired during login, status checks, and logout.
 - Public auth endpoints: `GET /api/auth/status`, `GET /api/auth/oidc/login`, `GET /api/auth/oidc/callback`, and `POST /api/auth/logout`
 - Keep API-key Bearer authentication for desktop sync, MCP automation, and a safe administrator fallback
 
@@ -421,3 +423,4 @@ Requests collected from early users — not yet scheduled for implementation:
 | 1.0 | 2026-03-17 | Roadmap updated: M4 (desktop→server push), M5 (conflict UI), M6 (Search v2/Tantivy), M7 (offline editor); notarization deferred; macOS Gatekeeper docs updated for Sequoia |
 | 1.1 | 2026-07-13 | v0.0.10 scope: secure Mermaid rendering, tag browser, focus mode, matching server/UI tag parsing, and release-check improvements |
 | 1.2 | 2026-07-13 | MCP/OKF scope: authenticated Streamable HTTP search/read tools with source links; non-destructive OKF v0.1 recognition; provider-neutral OIDC Authorization Code + PKCE browser sessions implemented |
+| 1.3 | 2026-07-17 | v0.0.11 cookie migration: host-only versioned OIDC session cookie for HTTPS, local HTTP fallback, and automatic removal of the legacy cookie |
