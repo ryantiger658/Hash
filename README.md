@@ -58,6 +58,44 @@ docker compose up -d
 
 Open `http://your-server:3535` in your browser and enter your API key to log in.
 
+## MCP and OKF
+
+#ash exposes an authenticated, stateless Streamable HTTP MCP server at `https://your-server/mcp`. Configure your MCP client with that URL and the same API key as a Bearer token. It provides `search_notes` and `read_note`; search results include a URL that opens the original note in #ash.
+
+When deployed behind a reverse proxy, set the public URL so those source links are stable:
+
+```toml
+[server]
+public_url = "https://notes.example.com"
+```
+
+OKF v0.1 support is recognition-only: any ordinary Markdown note with leading YAML frontmatter and a non-empty `type` field is recognized as an OKF concept. `index.md` and `log.md` are treated as OKF reserved files. Existing notes are never changed or rejected, and no `validate_okf` MCP tool is exposed.
+
+## OpenID Connect login
+
+The web interface supports any standards-compliant OpenID Connect provider. Register this callback URL with the provider:
+
+```text
+https://notes.example.com/api/auth/oidc/callback
+```
+
+When running without a `config.toml`, configure the server with environment variables:
+
+```yaml
+environment:
+  HASH_API_KEY: "your-automation-api-key"
+  HASH_PUBLIC_URL: "https://notes.example.com"
+  HASH_OIDC_ISSUER: "https://identity.example.com/oidc"
+  HASH_OIDC_CLIENT_ID: "hash"
+  HASH_OIDC_CLIENT_SECRET: "replace-with-provider-secret"
+  HASH_OIDC_REDIRECT_URL: "https://notes.example.com/api/auth/oidc/callback"
+  HASH_OIDC_SCOPES: "openid profile email"
+```
+
+The issuer must expose OpenID Connect discovery metadata. The browser uses Authorization Code with PKCE and receives an `HttpOnly` session cookie after the ID token is verified. Browser sessions last 24 hours and are cleared when the server restarts. The API key remains available for desktop sync, MCP clients, and administrator fallback access.
+
+If you mount a `config.toml`, use the equivalent `[auth]` fields shown in [`config.example.toml`](config.example.toml); the project loads the config file instead of environment configuration.
+
 ### Portainer
 
 1. Go to **Stacks → Add stack**

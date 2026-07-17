@@ -73,6 +73,11 @@ async function request(method, path, body = null) {
 }
 
 export const api = {
+  /** Public browser-auth status: OIDC availability and current cookie session. */
+  authStatus: () => fetch(`${getServerUrl()}/api/auth/status`).then(r => r.json()),
+
+  /** Clear the browser OIDC session cookie. */
+  logout: () => fetch(`${getServerUrl()}/api/auth/logout`, { method: 'POST' }),
   /** GET /api/files — list all vault files with metadata */
   listFiles: () => request('GET', '/files').then(r => r.json()),
 

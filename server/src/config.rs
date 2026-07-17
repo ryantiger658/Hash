@@ -18,6 +18,10 @@ pub struct ServerConfig {
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
+    /// Canonical externally reachable URL (for example `https://notes.example.com`).
+    /// Used in links returned to MCP clients and for Origin validation.
+    #[serde(default)]
+    pub public_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -30,6 +34,18 @@ pub struct VaultConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AuthConfig {
     pub api_key: String,
+    /// Provider-neutral OIDC issuer URL. OIDC is disabled unless all fields below are set.
+    #[serde(default)]
+    pub oidc_issuer: Option<String>,
+    #[serde(default)]
+    pub oidc_client_id: Option<String>,
+    #[serde(default)]
+    pub oidc_client_secret: Option<String>,
+    #[serde(default)]
+    pub oidc_redirect_url: Option<String>,
+    /// Space-separated OIDC scopes. `openid profile email` is a safe default.
+    #[serde(default = "default_oidc_scopes")]
+    pub oidc_scopes: String,
 }
 
 impl Config {
@@ -60,6 +76,7 @@ impl Config {
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or_else(default_port),
+                public_url: std::env::var("HASH_PUBLIC_URL").ok(),
             },
             vault: VaultConfig {
                 path: std::env::var("HASH_VAULT_PATH")
@@ -72,6 +89,12 @@ impl Config {
             auth: AuthConfig {
                 api_key: std::env::var("HASH_API_KEY")
                     .context("HASH_API_KEY must be set when no config.toml is present")?,
+                oidc_issuer: std::env::var("HASH_OIDC_ISSUER").ok(),
+                oidc_client_id: std::env::var("HASH_OIDC_CLIENT_ID").ok(),
+                oidc_client_secret: std::env::var("HASH_OIDC_CLIENT_SECRET").ok(),
+                oidc_redirect_url: std::env::var("HASH_OIDC_REDIRECT_URL").ok(),
+                oidc_scopes: std::env::var("HASH_OIDC_SCOPES")
+                    .unwrap_or_else(|_| default_oidc_scopes()),
             },
             ui: UiConfig {
                 secondary_color: std::env::var("HASH_SECONDARY_COLOR")
@@ -171,6 +194,10 @@ fn default_secondary_color() -> String {
 
 fn default_theme() -> String {
     "system".to_string()
+}
+
+fn default_oidc_scopes() -> String {
+    "openid profile email".to_string()
 }
 
 /// Runtime-mutable UI settings, stored in `.mdkb/ui-settings.toml`.

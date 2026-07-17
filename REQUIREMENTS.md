@@ -3,7 +3,7 @@
 > Pronounced "hash" — a self-hosted markdown knowledge base.
 > The `#` is the markdown heading character (ASCII 35); the default port 3535 = `##`.
 
-> Status: **v1.1** — M0–M6 complete; v0.0.10 in development
+> Status: **v1.2** — M0–M6 complete; v0.0.10 in development
 
 ---
 
@@ -106,6 +106,23 @@ An open-source, self-hosted markdown knowledge base with a server component (Doc
 - Per-file sync metadata stored in `.mdkb/sync/<path>.toml` (last synced checksum + timestamp)
 - Conflict resolution: client re-pushes the chosen version after user resolves; server accepts as a normal upsert
 
+### MCP and Open Knowledge Format ✅ v0.0.10
+
+- A stateless [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) endpoint at `POST /mcp`, protected by the normal Bearer credential
+- MCP tools: `search_notes` (ranked results with a #ash source URL) and `read_note`
+- `GET /mcp` explicitly reports that server-to-client SSE is unavailable; ordinary MCP calls use request/response POST
+- If an `Origin` header is supplied, it must match the configured public URL origin; requests without an Origin header (normal MCP clients) are allowed
+- OKF v0.1 compatibility is non-destructive: ordinary concept files are checked for YAML frontmatter and a non-empty `type`; `index.md` and `log.md` are exempt reserved files
+- Existing #ash notes remain editable whether or not they are OKF-conformant; #ash does not alter content to enforce the format
+
+### Authentication — OAuth / OIDC ✅ v0.0.10
+
+- Provider-neutral OpenID Connect Authorization Code + PKCE login, using environment variables for the issuer, client ID, client secret, scopes, and public callback URL
+- Discover provider endpoints and signing keys from the configured issuer; validate the ID token issuer, audience, signature, and one-time nonce before creating a session
+- Browser sessions use a random, `HttpOnly`, `SameSite=Lax` cookie, expire after 24 hours, and are held in memory so a server restart signs browsers out
+- Public auth endpoints: `GET /api/auth/status`, `GET /api/auth/oidc/login`, `GET /api/auth/oidc/callback`, and `POST /api/auth/logout`
+- Keep API-key Bearer authentication for desktop sync, MCP automation, and a safe administrator fallback
+
 ### Security
 
 - Bearer token auth on all protected routes; public route for UI config (`/api/ui-config`)
@@ -195,6 +212,12 @@ Response:
 | `vault.path` | `HASH_VAULT_PATH` | *(required)* | |
 | `vault.poll_interval_secs` | `HASH_POLL_INTERVAL` | `30` | |
 | `auth.api_key` | `HASH_API_KEY` | *(required)* | |
+| `auth.oidc_issuer` | `HASH_OIDC_ISSUER` | *(optional)* | OIDC issuer URL used for discovery |
+| `auth.oidc_client_id` | `HASH_OIDC_CLIENT_ID` | *(optional)* | OIDC confidential-client ID |
+| `auth.oidc_client_secret` | `HASH_OIDC_CLIENT_SECRET` | *(optional)* | OIDC confidential-client secret |
+| `auth.oidc_redirect_url` | `HASH_OIDC_REDIRECT_URL` | *(optional)* | Registered OIDC callback, e.g. `https://notes.example.com/api/auth/oidc/callback` |
+| `auth.oidc_scopes` | `HASH_OIDC_SCOPES` | `openid profile email` | Space-separated requested OIDC scopes |
+| `server.public_url` | `HASH_PUBLIC_URL` | *(optional)* | Canonical external URL; used for MCP source-note links and allowed browser Origin validation |
 | `ui.secondary_color` | `HASH_SECONDARY_COLOR` | `#aaff00` | Any CSS hex color |
 | `ui.default_theme` | `HASH_DEFAULT_THEME` | `system` | `light`, `dark`, `system` |
 | `ui.editor_labels` | `HASH_EDITOR_LABELS` | `false` | `true` to show Edit/Split/Preview text labels |
@@ -244,6 +267,9 @@ Response:
 | Mermaid loading | Dynamic import when a note contains a Mermaid block | Avoid adding diagram code to the normal editor bundle |
 | Tag parsing | Same documented frontmatter subset in server and UI | Sidebar tag results must match the note properties panel |
 | Release vulnerability policy | Block on high/critical Grype findings | A reported-but-released critical image does not meet the security goal |
+| MCP transport | Stateless Streamable HTTP at `/mcp` | Simple for a single-container homelab deployment; no in-memory session affinity required |
+| MCP access | Existing Bearer API key until OIDC is configured | Protects vault contents immediately and keeps desktop automation working |
+| OKF support | Validate-only, non-destructive v0.1 compatibility | #ash remains a general-purpose note vault while offering portable agent-ready bundles |
 
 ---
 
@@ -362,7 +388,6 @@ Requests collected from early users — not yet scheduled for implementation:
 | Version update notification | Check for new releases and show a badge/prompt when a newer version is available |
 | Vault symlinks | Symlink files or directories from outside the vault into it (e.g. `vault/hash/ -> project docs`); requires WalkDir to preserve symlink-relative paths while reading through to target content |
 | Vim keybindings | Optional vim modal editing (normal/insert/visual) in the editor pane; controlled via `vim_mode` config flag |
-| OIDC / SSO authentication | Replace API-key auth with OpenID Connect (e.g. Authentik, Keycloak, Authelia); enables per-user sessions, homelab SSO integration, and removes the need to distribute a shared API key |
 | E2E encryption | Encrypt vault contents at rest and in transit beyond HTTPS; key management TBD; impacts search (index over ciphertext vs. client-side search) |
 | macOS notarization | Apple Developer account ($99/yr) required; removes Gatekeeper warning; deferred indefinitely — README documents the manual workaround for all macOS versions |
 
@@ -395,3 +420,4 @@ Requests collected from early users — not yet scheduled for implementation:
 | 0.9 | 2026-03-17 | M3 complete (v0.0.6–v0.0.8): desktop sync engine, config UI, server icon, login fix, icon redesign; backlog updated with e2e encryption, push-from-desktop, conflict UI, notarization |
 | 1.0 | 2026-03-17 | Roadmap updated: M4 (desktop→server push), M5 (conflict UI), M6 (Search v2/Tantivy), M7 (offline editor); notarization deferred; macOS Gatekeeper docs updated for Sequoia |
 | 1.1 | 2026-07-13 | v0.0.10 scope: secure Mermaid rendering, tag browser, focus mode, matching server/UI tag parsing, and release-check improvements |
+| 1.2 | 2026-07-13 | MCP/OKF scope: authenticated Streamable HTTP search/read tools with source links; non-destructive OKF v0.1 recognition; provider-neutral OIDC Authorization Code + PKCE browser sessions implemented |

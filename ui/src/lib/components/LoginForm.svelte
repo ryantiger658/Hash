@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte'
-  import { saveApiKey, saveServerUrl, getServerUrl } from '../api.js'
+  import { saveApiKey, saveServerUrl, getServerUrl, api } from '../api.js'
 
   const dispatch = createEventDispatcher()
 
@@ -13,8 +13,19 @@
   let error = ''
   let loading = false
   let inputEl
+  let oidcEnabled = false
 
   onMount(async () => {
+    if (!isDesktop) {
+      try {
+        const status = await api.authStatus()
+        oidcEnabled = !!status.oidc_enabled
+        if (status.authenticated) {
+          dispatch('login')
+          return
+        }
+      } catch { /* API-key form remains available */ }
+    }
     // Pre-fill server URL from sync config if not already stored
     if (isDesktop && !serverUrl) {
       try {
@@ -24,6 +35,10 @@
     }
     inputEl?.focus()
   })
+
+  function oidcLogin() {
+    window.location.assign('/api/auth/oidc/login')
+  }
 
   async function submit() {
     error = ''
@@ -53,6 +68,11 @@
   <form class="login-card" on:submit|preventDefault={submit}>
     <h1 class="logo">#ash</h1>
     <p class="tagline">Self-hosted markdown knowledge base</p>
+
+    {#if oidcEnabled && !isDesktop}
+      <button class="oidc-btn" type="button" on:click={oidcLogin}>Sign in with SSO</button>
+      <div class="divider"><span>or use an API key</span></div>
+    {/if}
 
     {#if isDesktop}
       <label for="serverurl">Server URL</label>
@@ -164,4 +184,8 @@
     font-size: 0.85rem;
     color: #f87171;
   }
+
+  .oidc-btn { margin-top: 0.25rem; }
+  .divider { display: flex; align-items: center; gap: 0.6rem; color: var(--color-text-muted); font-size: 0.72rem; }
+  .divider::before, .divider::after { content: ''; height: 1px; background: var(--color-border); flex: 1; }
 </style>

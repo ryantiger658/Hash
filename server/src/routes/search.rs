@@ -64,6 +64,20 @@ pub async fn search(
     )))
 }
 
+/// Shared search entry point for local integrations such as MCP.
+pub(crate) fn search_for_mcp(
+    state: &AppState,
+    query: &str,
+    limit: usize,
+) -> crate::search_index::SearchResponse {
+    let (path_prefix, query_str) = extract_path_prefix(query);
+    if let Some(index) = &state.search_index {
+        index.search(query_str, limit, 0, path_prefix.as_deref())
+    } else {
+        linear_search(state, query_str, limit, 0, path_prefix.as_deref())
+    }
+}
+
 /// Strip a leading `path:<prefix>` token and return (prefix, remaining_query).
 fn extract_path_prefix(q: &str) -> (Option<String>, &str) {
     if let Some(rest) = q.strip_prefix("path:") {

@@ -27,7 +27,7 @@ test.describe('Tag browser, focus mode, and safe diagrams', () => {
     await page.getByRole('button', { name: /#async/ }).click()
     await expect(page.locator('.tag-file-row')).toContainText(name.replace(/\.md$/, ''))
     await page.locator('.tag-file-row').click()
-    await expect(page.locator('textarea.raw')).toContainText('tags: rust')
+    await expect(page.locator('textarea.raw')).toHaveValue(/tags: rust/)
   })
 
   test('focus mode toggles with the keyboard and Escape restores the chrome', async ({ page }) => {

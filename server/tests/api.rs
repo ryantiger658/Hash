@@ -12,10 +12,10 @@ use hash_server::{
     config::{AuthConfig, Config, ServerConfig, UiConfig, VaultConfig},
     routes::build_router,
     vault::Vault,
-    AppState,
+    AppState, WebSession,
 };
 use http_body_util::BodyExt;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -30,11 +30,17 @@ fn make_app() -> (Router, TempDir) {
 }
 
 fn make_app_with_key(api_key: &str) -> (Router, TempDir) {
+    let (app, dir, _state) = make_app_with_state(api_key);
+    (app, dir)
+}
+
+fn make_app_with_state(api_key: &str) -> (Router, TempDir, Arc<AppState>) {
     let dir = tempfile::tempdir().unwrap();
     let config = Config {
         server: ServerConfig {
             host: "127.0.0.1".into(),
             port: 3535,
+            public_url: Some("https://notes.example.test".into()),
         },
         vault: VaultConfig {
             path: dir.path().to_str().unwrap().into(),
@@ -42,6 +48,11 @@ fn make_app_with_key(api_key: &str) -> (Router, TempDir) {
         },
         auth: AuthConfig {
             api_key: api_key.into(),
+            oidc_issuer: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_redirect_url: None,
+            oidc_scopes: "openid profile email".into(),
         },
         ui: UiConfig::default(),
     };
@@ -52,11 +63,13 @@ fn make_app_with_key(api_key: &str) -> (Router, TempDir) {
         vault,
         ui_settings: std::sync::Arc::new(std::sync::RwLock::new(ui_settings)),
         tokens: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        oidc_flows: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        web_sessions: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         // Use None in unit tests so the linear-scan fallback runs.
         // Tantivy-specific behavior is covered by search_tantivy_* tests and E2E.
         search_index: None,
     });
-    (build_router(state), dir)
+    (build_router(state.clone()), dir, state)
 }
 
 /// Build an authenticated GET request.
@@ -168,6 +181,167 @@ async fn auth_bearer_prefix_required() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn auth_status_reports_oidc_disabled_without_configuration() {
+    let (app, _dir) = make_app();
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        body_json(res).await,
+        serde_json::json!({ "oidc_enabled": false, "authenticated": false })
+    );
+}
+
+#[tokio::test]
+async fn oidc_web_session_cookie_authenticates_protected_routes() {
+    let (app, _dir, state) = make_app_with_state(TEST_KEY);
+    state.web_sessions.lock().unwrap().insert(
+        "test-session".into(),
+        WebSession {
+            subject: "user-123".into(),
+            created: Instant::now(),
+        },
+    );
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/files")
+                .header("Cookie", "hash-session=test-session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn logout_revokes_oidc_web_session_and_expires_cookie() {
+    let (app, _dir, state) = make_app_with_state(TEST_KEY);
+    state.web_sessions.lock().unwrap().insert(
+        "test-session".into(),
+        WebSession {
+            subject: "user-123".into(),
+            created: Instant::now(),
+        },
+    );
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/auth/logout")
+                .header("Cookie", "hash-session=test-session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    assert!(res
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.contains("hash-session=") && value.contains("Max-Age=0")));
+
+    let protected = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/files")
+                .header("Cookie", "hash-session=test-session")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(protected.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ── MCP (Streamable HTTP) ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn mcp_requires_bearer_authentication() {
+    let (app, _dir) = make_app();
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/mcp")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn mcp_rejects_oidc_web_session_cookie() {
+    let (app, _dir, state) = make_app_with_state(TEST_KEY);
+    state.web_sessions.lock().unwrap().insert(
+        "test-session".into(),
+        WebSession {
+            subject: "user-123".into(),
+            created: Instant::now(),
+        },
+    );
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/mcp")
+                .header("Cookie", "hash-session=test-session")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn mcp_search_returns_a_source_note_link() {
+    let (app, dir) = make_app();
+    std::fs::write(
+        dir.path().join("rust notes.md"),
+        "# Rust\nOwnership is useful",
+    )
+    .unwrap();
+    let request = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": { "name": "search_notes", "arguments": { "query": "Ownership" } }
+    });
+    let res = app.oneshot(auth_post_json("/mcp", request)).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    let result = &json["result"]["structuredContent"]["results"][0];
+    assert_eq!(result["path"], "rust notes.md");
+    assert_eq!(
+        result["source_url"],
+        "https://notes.example.test/?note=rust%20notes.md"
+    );
 }
 
 // ── Public routes (no auth) ───────────────────────────────────────────────────

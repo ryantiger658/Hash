@@ -12,6 +12,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 mod assets;
 mod auth;
 mod files;
+mod mcp;
 mod search;
 mod sync;
 mod ui;
@@ -21,10 +22,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // Public routes — no auth required.
     let public_api = Router::new()
         .route("/ui-config", get(ui::get_ui_config))
+        .route("/auth/status", get(auth::auth_status))
+        .route("/auth/oidc/login", get(auth::oidc_login))
+        .route("/auth/oidc/callback", get(auth::oidc_callback))
+        .route("/auth/logout", post(auth::logout))
         // Vault assets use session-token auth (query param) so <img> tags work
         .route("/vault-asset/*path", get(assets::get_vault_asset));
 
-    // Protected routes — API key required.
+    // Protected routes — API key or verified browser OIDC session required.
     let protected_api = Router::new()
         // Vault file operations
         .route("/files", get(files::list_files))
@@ -43,7 +48,16 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Sync endpoints (used by desktop clients)
         .route("/sync/snapshot", get(sync::get_snapshot))
         .route("/sync/push", post(sync::push_changes))
-        // Require API key on all protected routes
+        // Require either supported authentication method on protected routes
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_auth,
+        ));
+
+    // MCP uses the same Bearer credential as the REST API. It is mounted
+    // outside `/api` because Streamable HTTP clients conventionally use `/mcp`.
+    let mcp = Router::new()
+        .route("/mcp", get(mcp::get_mcp).post(mcp::post_mcp))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
@@ -51,6 +65,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     Router::new()
         .nest("/api", public_api.merge(protected_api))
+        .merge(mcp)
         // Serve the compiled Svelte frontend from the static/ directory
         .fallback_service(tower_http::services::ServeDir::new("static"))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50 MB upload limit

@@ -48,6 +48,7 @@ tantivy = "0.22"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+openidconnect = { version = "4", features = ["reqwest"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -18,6 +18,12 @@ All notable changes to #ash are documented here. Versions follow [Semantic Versi
 - Mermaid is loaded only when the open note contains a diagram, keeping the regular editor bundle small.
 - Server tag extraction now matches the UI's supported frontmatter forms and no longer truncates long frontmatter blocks.
 
+### Integrations
+
+- **MCP over Streamable HTTP** — Authenticated AI clients can search and read notes at `/mcp`; search results include links back to the source note in #ash.
+- **Open Knowledge Format (OKF)** — #ash recognizes the portable Markdown/frontmatter bundle format without modifying existing notes.
+- **OpenID Connect login** — The web interface supports provider-neutral Authorization Code + PKCE login with issuer discovery, ID-token verification, secure browser sessions, and environment-variable configuration. API-key access remains available for desktop sync, MCP, and administrator fallback.
+
 ---
 
 ## [v0.0.9] — 2026-03-27

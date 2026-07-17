@@ -9,11 +9,17 @@
 #   HASH_VAULT_PATH       (required)
 #   HASH_HOST             (default: 0.0.0.0)
 #   HASH_PORT             (default: 3535)
+#   HASH_PUBLIC_URL       (optional, used by MCP source links)
 #   HASH_POLL_INTERVAL    (default: 30)
 #   HASH_SECONDARY_COLOR      (default: #aaff00)
 #   HASH_DEFAULT_THEME        (default: system)
 #   HASH_SHOW_HIDDEN_FILES    (default: false)
 #   HASH_LINE_NUMBERS         (default: false)
+#   HASH_OIDC_ISSUER          (optional, provider-neutral OIDC issuer)
+#   HASH_OIDC_CLIENT_ID       (optional)
+#   HASH_OIDC_CLIENT_SECRET   (optional)
+#   HASH_OIDC_REDIRECT_URL    (optional)
+#   HASH_OIDC_SCOPES          (default: "openid profile email")
 
 [server]
 # Address to bind the HTTP server to.
@@ -22,6 +28,11 @@ host = "0.0.0.0"
 
 # Default port. 3535 = "##" in ASCII (# is character 35).
 port = 3535
+
+# Canonical external URL when #ash sits behind a reverse proxy.
+# MCP uses this to return stable source-note links and validate browser Origins.
+# Leave commented out when accessing #ash directly by host and port.
+# public_url = "https://notes.example.com"
 
 [vault]
 # Absolute path to the markdown vault directory.
@@ -60,3 +71,12 @@ spell_check = false
 # Generate a strong random value before deploying, e.g.:
 #   openssl rand -hex 32
 api_key = "change-me-before-deploying"
+
+# Optional OpenID Connect login. Any standards-compliant provider that exposes
+# OIDC discovery metadata is supported.
+# When running without a config file, use these environment variables instead:
+# HASH_OIDC_ISSUER=https://identity.example.com/realms/home
+# HASH_OIDC_CLIENT_ID=your-client-id
+# HASH_OIDC_CLIENT_SECRET=your-client-secret
+# HASH_OIDC_REDIRECT_URL=https://notes.example.com/api/auth/oidc/callback
+# HASH_OIDC_SCOPES="openid profile email"

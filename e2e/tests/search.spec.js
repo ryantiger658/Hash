@@ -46,9 +46,7 @@ test.describe('Search', () => {
     await page.locator('input[type="search"]').fill('uniquesearchterm')
     const firstResult = page.locator('ul.results li').first()
     await firstResult.click()
-    await expect(page.locator('textarea.raw')).toBeVisible()
-    const value = await page.locator('textarea.raw').inputValue()
-    expect(value).toContain('uniquesearchterm')
+    await expect(page.locator('textarea.raw')).toHaveValue(/uniquesearchterm/)
   })
 
   test('empty query returns no results', async ({ page }) => {

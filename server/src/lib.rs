@@ -1,5 +1,6 @@
 pub mod config;
 pub mod migrations;
+pub mod okf;
 pub mod routes;
 pub mod search_index;
 pub mod sync;
@@ -21,6 +22,23 @@ pub const SESSION_TOKEN_TTL_SECS: u64 = 86_400;
 /// The actual API key never appears in image URLs — only the token does.
 pub type TokenStore = Arc<Mutex<HashMap<String, Instant>>>;
 
+/// Pending browser authorization request. Stored briefly so callback state,
+/// nonce, and PKCE verifier can be checked server-side.
+pub struct OidcFlow {
+    pub nonce: String,
+    pub pkce_verifier: String,
+    pub created: Instant,
+}
+
+/// Authenticated browser session. The cookie contains only the random map key.
+pub struct WebSession {
+    pub subject: String,
+    pub created: Instant,
+}
+
+pub type OidcFlowStore = Arc<Mutex<HashMap<String, OidcFlow>>>;
+pub type WebSessionStore = Arc<Mutex<HashMap<String, WebSession>>>;
+
 /// Shared application state passed to all Axum route handlers.
 pub struct AppState {
     pub config: config::Config,
@@ -30,6 +48,8 @@ pub struct AppState {
     pub ui_settings: Arc<RwLock<config::UiSettings>>,
     /// Session tokens for vault-asset image serving (see `POST /api/auth/session`).
     pub tokens: TokenStore,
+    pub oidc_flows: OidcFlowStore,
+    pub web_sessions: WebSessionStore,
     /// Tantivy full-text search index.  `None` if the index failed to initialize.
     pub search_index: Option<Arc<search_index::SearchIndex>>,
 }
@@ -83,6 +103,8 @@ pub async fn run() -> Result<()> {
         vault,
         ui_settings: Arc::new(RwLock::new(ui_settings)),
         tokens,
+        oidc_flows: Arc::new(Mutex::new(HashMap::new())),
+        web_sessions: Arc::new(Mutex::new(HashMap::new())),
         search_index,
     });
     let app = routes::build_router(state.clone());

@@ -35,18 +35,28 @@
     const pollMs = (cfg?.poll_interval_secs ?? 10) * 1000
     pollIntervalSecs.set(cfg?.poll_interval_secs ?? 10)
     await loadVault()
-    await openTodayJournal()
+    await openSourceNoteOrJournal()
     startPolling(pollMs)
   }
 
-  function logout() {
+  async function logout() {
     stopPolling()
     stopOpenFilePoll()
+    try { await api.logout() } catch { /* local logout still proceeds */ }
     clearApiKey()
     clearServerUrl()
     authenticated = false
     selectedPath.set(null)
     fileContent.set('')
+  }
+
+  async function openSourceNoteOrJournal() {
+    const requested = new URLSearchParams(window.location.search).get('note')
+    if (requested && requested.endsWith('.md') && $files.some(file => file.path === requested)) {
+      await selectFile(requested)
+    } else {
+      await openTodayJournal()
+    }
   }
 
   function onPollIntervalChange(e) {
@@ -249,7 +259,7 @@
       e.preventDefault()
       showSettings = true
     }
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'F') {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
       e.preventDefault()
       focusMode = !focusMode
     }
@@ -270,7 +280,7 @@
       pollIntervalSecs.set(cfg?.poll_interval_secs ?? 10)
       if (authenticated) {
         refreshImageToken()
-        loadVault().then(openTodayJournal).then(() => startPolling(pollMs))
+        loadVault().then(openSourceNoteOrJournal).then(() => startPolling(pollMs))
       }
     })
 
@@ -279,13 +289,12 @@
     //   window focus     → fires when the OS window regains focus (e.g. PWA → browser, or
     //                       browser minimised then restored)
     //
-    // Use hasApiKey() at call-time rather than the closure-captured `authenticated`
-    // variable — Svelte's reactive invalidation can mean the closure sees a stale value.
+    // Check the live login state so both API-key and OIDC browser sessions poll.
     // Debounce so both events firing together (e.g. restoring a minimised window) only
     // triggers one poll.
     let focusPollTimer = null
     function scheduleFocusPoll() {
-      if (!hasApiKey()) return
+      if (!authenticated) return
       clearTimeout(focusPollTimer)
       focusPollTimer = setTimeout(pollVault, 100)
     }

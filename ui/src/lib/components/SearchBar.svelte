@@ -54,7 +54,7 @@
       </svg>
     </span>
     <input
-      type="text"
+      type="search"
       bind:value={query}
       on:input={onInput}
       placeholder="Search…"
@@ -130,6 +130,10 @@
 
   input::placeholder {
     color: var(--color-text-muted);
+  }
+
+  input::-webkit-search-cancel-button {
+    display: none;
   }
 
   .clear {
